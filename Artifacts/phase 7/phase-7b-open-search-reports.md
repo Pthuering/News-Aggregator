@@ -18,19 +18,28 @@ Ein freies Textfeld zur Eingabe beliebiger Suchbegriffe, Events oder Themen, üb
 - [ ] Suchanfragen speichern/bookmarken
 - [ ] Option: "Nur aktuelle Artikel" (letzte 30/90/365 Tage)
 
-### 7b-2 - KI-gestützte Recherche
-- [ ] KI durchsucht alle vorhandenen Artikel nach Relevanz
-- [ ] Option: Live-Web-Suche durch KI (externe Quellen)
-- [ ] Automatische Quellenerkennung & -validierung
-- [ ] Deduplizierung ähnlicher Ergebnisse
-- [ ] Priorisierung nach Aktualität & Relevanz
+### 7b-2 - KI-gestützte Recherche (Multi-Source)
+- [ ] **Interne Suche**: KI durchsucht alle vorhandenen RSS-Artikel nach Relevanz
+- [ ] **Live-Web-Suche**: KI führt automatisch Web-Suche durch (nicht optional)
+- [ ] **Automatisches Parsing**: 
+  - Gefundene Webseiten werden automatisch geparst (nutzt bestehende Feed-Service-Logik)
+  - Extraktion von Titel, Content, Datum, Autor
+  - Nur sinnvolle/routable URLs werden verfolgt (keine PDFs, Login-Seiten etc.)
+- [ ] **Relevanz-Bewertung durch KI**:
+  - Jede gefundene Quelle wird auf Verbindung zum Suchbegriff/Event geprüft
+  - Scoring 0-10 (Relevanz)
+  - Irrelevante Ergebnisse (< Schwelle) werden verworfen
+- [ ] **Deduplizierung**: Ähnliche Ergebnisse über verschiedene Quellen werden erkannt
+- [ ] **Priorisierung**: Nach Aktualität, Relevanz und Quellen-Qualität sortiert
 
-### 7b-3 - Quellenverwaltung
-- [ ] Gefundene Quellen werden automatisch gespeichert
-- [ ] Link-Archiv mit Metadaten (Titel, Datum, Excerpt)
-- [ ] Quellen können manuell hinzugefügt/entfernt werden
-- [ ] Import von Links (CSV, Text-Liste)
-- [ ] Export der Quellenliste (BibTeX, RIS, CSV)
+### 7b-3 - Quellenverwaltung & Parsing
+- [ ] **Automatische Quellen-Erfassung**:
+  - Web-Suchergebnisse werden automatisch gecrawlt und geparst
+  - Nutzt bestehende `feedService.js` Parsing-Logik (XML/HTML)
+  - Speicherung im ArticleStore (mit Markierung als "Web-Fund")
+- [ ] **Link-Archiv**: Alle gefundenen Quellen mit Metadaten (Titel, Datum, Excerpt, Quell-URL)
+- [ ] **Manuelle Bearbeitung**: Quellen können hinzugefügt/entfernt werden
+- [ ] **Import/Export**: Links als CSV, Text-Liste, BibTeX, RIS
 
 ### 7b-4 - Report-Generierung
 - [ ] Automatische Zusammenfassung aller Findings
