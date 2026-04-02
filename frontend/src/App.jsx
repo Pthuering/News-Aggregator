@@ -8,11 +8,13 @@
 import { useState, useEffect } from "react";
 import { initDB, getAllArticles } from "./stores/articleStore.js";
 import { fetchAllFeeds } from "./services/feedService.js";
+import Settings from "./components/Settings.jsx";
 
 function App() {
   const [articles, setArticles] = useState([]);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
+  const [showSettings, setShowSettings] = useState(false);
   const [initialized, setInitialized] = useState(false);
 
   // Initialize DB on mount
@@ -79,6 +81,12 @@ function App() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
             <h1 className="text-2xl font-bold text-gray-900">Trend Radar</h1>
+            <button
+              onClick={() => setShowSettings(true)}
+              className="px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 transition-colors"
+            >
+              Einstellungen
+            </button>
           </div>
         </div>
       </header>
@@ -150,6 +158,22 @@ function App() {
                     <div className="mt-1 text-sm text-gray-500">
                       {article.source} · {formatDate(article.published)}
                     </div>
+                    {article.scores && (
+                      <div className="mt-2 flex gap-2">
+                        <span className="px-2 py-0.5 text-xs bg-blue-100 text-blue-800 rounded-full">
+                          ÖPNV: {article.scores.oepnv_direkt}/10
+                        </span>
+                        <span className="px-2 py-0.5 text-xs bg-purple-100 text-purple-800 rounded-full">
+                          Tech: {article.scores.tech_transfer}/10
+                        </span>
+                        <span className="px-2 py-0.5 text-xs bg-green-100 text-green-800 rounded-full">
+                          Förder: {article.scores.foerder}/10
+                        </span>
+                        <span className="px-2 py-0.5 text-xs bg-orange-100 text-orange-800 rounded-full">
+                          Markt: {article.scores.markt}/10
+                        </span>
+                      </div>
+                    )}
                   </a>
                 </li>
               ))}
@@ -157,6 +181,15 @@ function App() {
           )}
         </div>
       </main>
+
+      {/* Settings Modal */}
+      {showSettings && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-lg shadow-xl max-w-lg w-full">
+            <Settings onClose={() => setShowSettings(false)} />
+          </div>
+        </div>
+      )}
     </div>
   );
 }
