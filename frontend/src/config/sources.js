@@ -26,14 +26,6 @@
 export const sources = [
   // Kategorie "branche"
   {
-    id: "vdv-blog",
-    name: "VDV Blog",
-    url: "https://www.vdv.de/feed.xml",
-    type: "rss",
-    category: "branche",
-    active: true,
-  },
-  {
     id: "nahverkehr-hamburg",
     name: "Nahverkehr Hamburg",
     url: "https://www.nahverkehrhamburg.de/feed/",
@@ -55,22 +47,6 @@ export const sources = [
     id: "cities-today",
     name: "Cities Today",
     url: "https://cities-today.com/feed/",
-    type: "rss",
-    category: "international",
-    active: true,
-  },
-  {
-    id: "intelligent-transport",
-    name: "Intelligent Transport",
-    url: "https://www.intelligenttransport.com/feed/",
-    type: "rss",
-    category: "international",
-    active: true,
-  },
-  {
-    id: "smart-cities-world",
-    name: "Smart Cities World",
-    url: "https://www.smartcitiesworld.net/rss",
     type: "rss",
     category: "international",
     active: true,
@@ -101,16 +77,6 @@ export const sources = [
     url: "https://www.eu-startups.com/feed/",
     type: "rss",
     category: "startup",
-    active: true,
-  },
-
-  // Kategorie "foerder"
-  {
-    id: "bmdv-meldungen",
-    name: "BMDV Meldungen",
-    url: "https://bmdv.bund.de/SiteGlobals/Functions/RSSFeed/DE/RSSNewsfeed/RSSNewsfeed.xml",
-    type: "rss",
-    category: "foerder",
     active: true,
   },
 ];
