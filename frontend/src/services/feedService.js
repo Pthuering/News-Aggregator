@@ -1,68 +1,114 @@
 /**
  * @module feedService
- * @purpose Fetch and parse RSS feeds via CORS proxy
+ * @purpose Holt RSS-Feeds via CORS-Proxy, parst XML, normalisiert zu RawArticle[]
  *
- * @reads    sources.js → feed URLs
- * @reads    settings.js → corsProxy URL, feed config
- * @writes   articleStore.js → save parsed articles
- * @calledBy App.jsx → on manual fetch trigger
- * @calls    hash.js → generateArticleId
+ * @reads    config/sources.js → getActiveSources()
+ * @reads    config/settings.js → getProxyUrl()
+ * @calls    stores/articleStore.js → saveArticles(), articleExists()
+ * @calls    utils/hash.js → hashString()
+ * @calledBy App.jsx → Button "Feeds aktualisieren"
  *
- * @dataflow RSS URL → CORS Proxy → XML → RawArticle[] → articleStore
+ * @dataflow
+ *   getActiveSources() → pro Quelle: fetch(proxyUrl + feedUrl)
+ *   → XML parsen (DOMParser) → Einträge normalisieren zu RawArticle
+ *   → Deduplizieren gegen articleStore → saveArticles()
  *
  * @exports
- *   fetchAllFeeds(): Promise<RawArticle[]> – Fetch all configured feeds
- *   fetchFeed(source: SourceConfig): Promise<RawArticle[]> – Fetch single feed
- *   parseRSS(xml: string, source: SourceConfig): RawArticle[] – Parse RSS XML
+ *   fetchAllFeeds(): Promise<IngestResult>
+ *     → Holt alle aktiven Feeds, speichert neue Artikel
+ *     → IngestResult: { newCount: number, skipped: number, errors: SourceError[] }
  *
- * @errors Returns empty array on fetch failure, logs to console
+ *   fetchSingleFeed(source: SourceConfig): Promise<RawArticle[]>
+ *     → Einzelner Feed, gibt geparste Artikel zurück ohne zu speichern
+ *
+ * @errors
+ *   - Timeout pro Feed: 10s, dann SourceError und weiter zum nächsten
+ *   - XML-Parse-Fehler: SourceError, Feed wird übersprungen
+ *   - Einzelne Feed-Fehler stoppen NICHT den Gesamtprozess
  */
 
-import { sources } from "../config/sources.js";
-import { settings } from "../config/settings.js";
-import { generateArticleId } from "../utils/hash.js";
-import { saveArticles } from "../stores/articleStore.js";
+import { getActiveSources } from "../config/sources.js";
+import { getProxyUrl } from "../config/settings.js";
+import { saveArticles, articleExists } from "../stores/articleStore.js";
+import { hashString } from "../utils/hash.js";
+
+const FETCH_TIMEOUT = 10000; // 10 seconds
 
 /**
- * Fetches all active RSS feeds
- * @returns {Promise<RawArticle[]>} - All fetched articles
+ * Fetch all active feeds
+ * @returns {Promise<{newCount: number, skipped: number, errors: Array}>}
  */
 export async function fetchAllFeeds() {
-  const activeSources = sources.filter((s) => s.active);
-  const allArticles = [];
+  const sources = getActiveSources();
+  const results = {
+    newCount: 0,
+    skipped: 0,
+    errors: [],
+  };
 
-  for (const source of activeSources) {
+  // Fetch all feeds in parallel
+  const fetchPromises = sources.map(async (source) => {
     try {
-      const articles = await fetchFeed(source);
-      allArticles.push(...articles);
+      const articles = await fetchSingleFeed(source);
+      return { source, articles, error: null };
     } catch (error) {
-      console.error(`Failed to fetch feed ${source.name}:`, error);
+      return { source, articles: [], error };
+    }
+  });
+
+  const settled = await Promise.allSettled(fetchPromises);
+
+  // Process results
+  for (const result of settled) {
+    if (result.status === "fulfilled") {
+      const { source, articles, error } = result.value;
+
+      if (error) {
+        results.errors.push({
+          source: source.name,
+          error: error.message,
+        });
+        continue;
+      }
+
+      // Deduplicate and count
+      for (const article of articles) {
+        const exists = await articleExists(article.id);
+        if (exists) {
+          results.skipped++;
+        } else {
+          results.newCount++;
+        }
+      }
+
+      // Save new articles
+      if (articles.length > 0) {
+        await saveArticles(articles);
+      }
+    } else {
+      results.errors.push({
+        source: "unknown",
+        error: result.reason?.message || "Unknown error",
+      });
     }
   }
 
-  // Save all articles to IndexedDB
-  if (allArticles.length > 0) {
-    await saveArticles(allArticles);
-  }
-
-  return allArticles;
+  return results;
 }
 
 /**
- * Fetches a single RSS feed
- * @param {SourceConfig} source - Feed source configuration
- * @returns {Promise<RawArticle[]>} - Parsed articles
+ * Fetch and parse a single feed
+ * @param {SourceConfig} source - Feed source
+ * @returns {Promise<RawArticle[]>}
  */
-export async function fetchFeed(source) {
-  const proxyUrl = settings.corsProxy.url;
+export async function fetchSingleFeed(source) {
+  const proxyUrl = getProxyUrl();
   const targetUrl = encodeURIComponent(source.url);
   const fetchUrl = `${proxyUrl}?url=${targetUrl}`;
 
+  // Fetch with timeout
   const controller = new AbortController();
-  const timeoutId = setTimeout(
-    () => controller.abort(),
-    settings.feed.timeoutMs
-  );
+  const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT);
 
   try {
     const response = await fetch(fetchUrl, {
@@ -78,142 +124,198 @@ export async function fetchFeed(source) {
       throw new Error(`HTTP error! status: ${response.status}`);
     }
 
-    const xml = await response.text();
-    return parseRSS(xml, source);
+    const xmlText = await response.text();
+    return parseFeed(xmlText, source);
   } catch (error) {
     clearTimeout(timeoutId);
-    console.error(`Error fetching ${source.name}:`, error);
+    if (error.name === "AbortError") {
+      throw new Error("Timeout after 10s");
+    }
     throw error;
   }
 }
 
 /**
- * Parses RSS XML into RawArticle objects
- * @param {string} xml - RSS XML content
- * @param {SourceConfig} source - Source configuration
- * @returns {RawArticle[]} - Parsed articles
+ * Parse RSS or Atom feed XML
+ * @param {string} xmlText - XML content
+ * @param {SourceConfig} source - Source config
+ * @returns {Promise<RawArticle[]>}
  */
-export function parseRSS(xml, source) {
+async function parseFeed(xmlText, source) {
   const parser = new DOMParser();
-  const doc = parser.parseFromString(xml, "text/xml");
+  const doc = parser.parseFromString(xmlText, "text/xml");
 
   // Check for parsing errors
   const parserError = doc.querySelector("parsererror");
   if (parserError) {
-    throw new Error("XML parsing error: " + parserError.textContent);
+    throw new Error("XML parsing error");
   }
 
-  const items = doc.querySelectorAll("item");
+  // Detect feed type
+  const rootTag = doc.documentElement.tagName.toLowerCase();
+  const isAtom = rootTag === "feed";
+  const isRss = rootTag === "rss";
+
+  if (!isAtom && !isRss) {
+    throw new Error("Unknown feed format");
+  }
+
+  const items = isAtom
+    ? doc.querySelectorAll("entry")
+    : doc.querySelectorAll("item");
+
   const articles = [];
 
-  for (let i = 0; i < Math.min(items.length, settings.feed.maxArticlesPerSource); i++) {
-    const item = items[i];
-    
-    const title = getTextContent(item, "title") || "Untitled";
-    const link = getTextContent(item, "link") || "";
-    const pubDate = getTextContent(item, "pubDate") || new Date().toISOString();
-    const description = getTextContent(item, "description") || "";
-    const contentEncoded = item.getElementsByTagNameNS(
-      "http://purl.org/rss/1.0/modules/content/",
-      "encoded"
-    )[0]?.textContent || "";
-    
-    // Use content:encoded if available, otherwise description
-    let content = contentEncoded || description;
-    
-    // Strip HTML tags and limit length
-    content = stripHtml(content);
-    if (content.length > settings.feed.maxContentLength) {
-      content = content.substring(0, settings.feed.maxContentLength) + "...";
+  for (const item of items) {
+    try {
+      const article = isAtom
+        ? parseAtomEntry(item, source)
+        : parseRssItem(item, source);
+
+      if (article) {
+        // Generate ID from URL
+        article.id = await hashString(article.url);
+        article.fetchedAt = new Date().toISOString();
+        articles.push(article);
+      }
+    } catch (e) {
+      // Skip invalid entries
+      console.warn("Failed to parse entry:", e.message);
     }
-
-    const article = {
-      id: awaitGenerateId(link || title + pubDate),
-      title: title.trim(),
-      url: link.trim(),
-      source: source.name,
-      sourceCategory: source.category,
-      published: new Date(pubDate).toISOString(),
-      content: content.trim(),
-      fetchedAt: new Date().toISOString(),
-    };
-
-    articles.push(article);
   }
 
   return articles;
 }
 
 /**
- * Helper to get text content from XML element
+ * Parse RSS 2.0 item
+ * @param {Element} item - RSS item element
+ * @param {SourceConfig} source - Source config
+ * @returns {RawArticle|null}
+ */
+function parseRssItem(item, source) {
+  const title = getTextContent(item, "title") || "Untitled";
+  const link = getTextContent(item, "link") || "";
+  const pubDate = getTextContent(item, "pubDate") || new Date().toISOString();
+
+  // Get content from description or content:encoded
+  let content =
+    item.getElementsByTagNameNS("http://purl.org/rss/1.0/modules/content/", "encoded")[0]
+      ?.textContent ||
+    getTextContent(item, "description") ||
+    "";
+
+  content = stripHtml(content);
+  content = truncate(content, 4000);
+
+  if (!link) return null;
+
+  return {
+    id: "", // Will be filled later
+    title: title.trim(),
+    url: link.trim(),
+    source: source.name,
+    sourceCategory: source.category,
+    published: normalizeDate(pubDate),
+    content: content.trim(),
+    fetchedAt: "", // Will be filled later
+  };
+}
+
+/**
+ * Parse Atom entry
+ * @param {Element} entry - Atom entry element
+ * @param {SourceConfig} source - Source config
+ * @returns {RawArticle|null}
+ */
+function parseAtomEntry(entry, source) {
+  const title = getTextContent(entry, "title") || "Untitled";
+
+  // Get link href attribute
+  let link = "";
+  const linkEl = entry.querySelector("link");
+  if (linkEl) {
+    link = linkEl.getAttribute("href") || "";
+  }
+
+  const published =
+    getTextContent(entry, "published") ||
+    getTextContent(entry, "updated") ||
+    new Date().toISOString();
+
+  // Get content from summary or content
+  let content =
+    getTextContent(entry, "content") ||
+    getTextContent(entry, "summary") ||
+    "";
+
+  content = stripHtml(content);
+  content = truncate(content, 4000);
+
+  if (!link) return null;
+
+  return {
+    id: "", // Will be filled later
+    title: title.trim(),
+    url: link.trim(),
+    source: source.name,
+    sourceCategory: source.category,
+    published: normalizeDate(published),
+    content: content.trim(),
+    fetchedAt: "", // Will be filled later
+  };
+}
+
+/**
+ * Get text content of an element
  * @param {Element} parent - Parent element
- * @param {string} tagName - Tag name to find
- * @returns {string|null} - Text content or null
+ * @param {string} tagName - Tag name
+ * @returns {string|null}
  */
 function getTextContent(parent, tagName) {
-  const element = parent.querySelector(tagName);
-  return element ? element.textContent : null;
+  const el = parent.querySelector(tagName);
+  return el ? el.textContent : null;
 }
 
 /**
  * Strip HTML tags from text
  * @param {string} html - HTML string
- * @returns {string} - Plain text
+ * @returns {string}
  */
 function stripHtml(html) {
   if (!html) return "";
-  const tmp = document.createElement("div");
-  tmp.innerHTML = html;
-  return tmp.textContent || tmp.innerText || "";
+  return html.replace(/<[^>]*>/g, "");
 }
 
 /**
- * Generate ID synchronously (wrapper for async hash)
- * @param {string} input - Input string
- * @returns {string} - Generated ID
+ * Truncate string to max length
+ * @param {string} str - String to truncate
+ * @param {number} maxLength - Max length
+ * @returns {string}
  */
-function awaitGenerateId(input) {
-  // Simple hash for synchronous use
-  let hash = 0;
-  for (let i = 0; i < input.length; i++) {
-    const char = input.charCodeAt(i);
-    hash = ((hash << 5) - hash) + char;
-    hash = hash & hash;
+function truncate(str, maxLength) {
+  if (!str || str.length <= maxLength) return str;
+  return str.substring(0, maxLength) + "...";
+}
+
+/**
+ * Normalize date to ISO-8601
+ * @param {string} dateStr - Date string
+ * @returns {string}
+ */
+function normalizeDate(dateStr) {
+  try {
+    const date = new Date(dateStr);
+    if (isNaN(date.getTime())) {
+      return new Date().toISOString();
+    }
+    return date.toISOString();
+  } catch {
+    return new Date().toISOString();
   }
-  return Math.abs(hash).toString(16).padStart(16, "0");
-}
-
-/**
- * Fetch a single feed by source ID
- * @param {string} sourceId - Source ID
- * @returns {Promise<RawArticle[]>}
- */
-export async function fetchFeedById(sourceId) {
-  const source = sources.find((s) => s.id === sourceId);
-  if (!source) {
-    throw new Error(`Source with id ${sourceId} not found`);
-  }
-  return fetchFeed(source);
-}
-
-/**
- * Get fetch status for all sources
- * @returns {Promise<Object[]>} - Status per source
- */
-export async function getFetchStatus() {
-  return sources.map((source) => ({
-    id: source.id,
-    name: source.name,
-    active: source.active,
-    category: source.category,
-    lastFetched: null, // Could be enhanced to track last fetch time
-  }));
 }
 
 export default {
   fetchAllFeeds,
-  fetchFeed,
-  fetchFeedById,
-  parseRSS,
-  getFetchStatus,
+  fetchSingleFeed,
 };
