@@ -1,27 +1,18 @@
 /**
  * @module hash
- * @purpose SHA-256 hashing utilities for article IDs
+ * @purpose Erzeugt SHA-256 Hash aus einem String (für Artikel-IDs)
  *
- * @dataflow string → SHA-256 hash → hex string
+ * @reads    nichts
+ * @writes   nichts
+ * @calledBy services/feedService.js → Hash der Artikel-URL als ID
  *
  * @exports
- *   generateArticleId(url: string): string – Creates SHA-256 hash from URL
- *   hashString(input: string): Promise<string> – Generic SHA-256 hasher
+ *   hashString(input: string): Promise<string>
+ *     → Gibt Hex-String des SHA-256 Hash zurück
  */
 
 /**
- * Generates a SHA-256 hash from a URL for use as article ID
- * @param {string} url - The article URL
- * @returns {Promise<string>} - Hex-encoded SHA-256 hash (first 16 chars)
- */
-export async function generateArticleId(url) {
-  const fullHash = await hashString(url);
-  // Use first 16 characters for readable IDs while maintaining uniqueness
-  return fullHash.substring(0, 16);
-}
-
-/**
- * Creates a SHA-256 hash of any string
+ * Creates a SHA-256 hash of a string and returns it as a hex string
  * @param {string} input - String to hash
  * @returns {Promise<string>} - Hex-encoded SHA-256 hash
  */
@@ -43,6 +34,5 @@ export async function hashString(input) {
 }
 
 export default {
-  generateArticleId,
   hashString,
 };
