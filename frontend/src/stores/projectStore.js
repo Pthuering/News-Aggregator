@@ -1,123 +1,97 @@
 /**
  * @module projectStore
- * @purpose IndexedDB storage for internal projects
+ * @purpose IndexedDB-Zugriff für interne Projekte
  *
- * @reads    settings.js → database config
- * @writes   IndexedDB → projects store
- * @calledBy ProjectManager.jsx → CRUD operations
- * @calledBy matchService.js → read projects for synergy matching
- *
- * @dataflow ProjectConfig → IndexedDB → CRUD operations
+ * @reads    nichts
+ * @writes   nichts
+ * @calledBy services/matchService.js → getProjects(), getProjectsAsContext()
+ * @calledBy components/ProjectManager.jsx → CRUD-Operationen
  *
  * @exports
- *   initProjectStore(): Promise<void> – Initialize the database
- *   saveProject(project: ProjectConfig): Promise<void> – Save a project
- *   getProjects(): Promise<ProjectConfig[]> – Get all projects
- *   getProjectById(id: string): Promise<ProjectConfig|null> – Get single project
- *   updateProject(id: string, updates: Partial<ProjectConfig>): Promise<void> – Update project
- *   deleteProject(id: string): Promise<void> – Delete project
- *   getActiveProjects(): Promise<ProjectConfig[]> – Get only active projects
+ *   getProjects(): Promise<ProjectConfig[]>
+ *   saveProject(project: ProjectConfig): Promise<void>
+ *   deleteProject(id: string): Promise<void>
+ *   getProjectsAsContext(): Promise<string>
+ *     → Formatiert alle aktiven Projekte als Text-Block für LLM-Prompt
+ *       Format: "Projekt: {name}\nBeschreibung: {description}\n
+ *                Technologien: {technologies}\nHerausforderungen: {challenges}\n---"
  *
- * @errors Logs errors to console, throws for critical failures
+ * @errors  Bei DB-Fehlern: Error werfen
  */
 
 import { openDB } from "idb";
-import { settings } from "../config/settings.js";
 
-const DB_NAME = settings.database.name;
-const DB_VERSION = settings.database.version;
-const STORE_NAME = settings.database.stores.projects;
+const DB_NAME = "trend-radar";
+const DB_VERSION = 1;
+const STORE_NAME = "projects";
 
 let db = null;
 
 /**
- * Initialize the project store database
+ * Initialize the project store
  * @returns {Promise<void>}
  */
-export async function initProjectStore() {
+async function initStore() {
   if (db) return;
 
-  try {
-    db = await openDB(DB_NAME, DB_VERSION, {
-      upgrade(db, oldVersion, newVersion, transaction) {
-        if (!db.objectStoreNames.contains(STORE_NAME)) {
-          const store = db.createObjectStore(STORE_NAME, { keyPath: "id" });
-          store.createIndex("status", "status", { unique: false });
-        }
-      },
-    });
-  } catch (error) {
-    console.error("Failed to initialize project store:", error);
-    throw error;
-  }
+  db = await openDB(DB_NAME, DB_VERSION, {
+    upgrade(db, oldVersion, newVersion, transaction) {
+      if (!db.objectStoreNames.contains(STORE_NAME)) {
+        db.createObjectStore(STORE_NAME, { keyPath: "id" });
+      }
+    },
+  });
 }
 
 /**
- * Save a project to the database
- * @param {ProjectConfig} project - Project to save
- * @returns {Promise<void>}
- */
-export async function saveProject(project) {
-  if (!db) await initProjectStore();
-  await db.put(STORE_NAME, project);
-}
-
-/**
- * Get all projects from the database
+ * Get all projects
  * @returns {Promise<ProjectConfig[]>}
  */
 export async function getProjects() {
-  if (!db) await initProjectStore();
+  await initStore();
   return db.getAll(STORE_NAME);
 }
 
 /**
- * Get a single project by ID
- * @param {string} id - Project ID
- * @returns {Promise<ProjectConfig|null>}
- */
-export async function getProjectById(id) {
-  if (!db) await initProjectStore();
-  return db.get(STORE_NAME, id);
-}
-
-/**
- * Update specific fields of a project
- * @param {string} id - Project ID
- * @param {Partial<ProjectConfig>} updates - Fields to update
+ * Save a project
+ * @param {ProjectConfig} project - Project to save
  * @returns {Promise<void>}
  */
-export async function updateProject(id, updates) {
-  if (!db) await initProjectStore();
-
-  const existing = await db.get(STORE_NAME, id);
-  if (!existing) {
-    throw new Error(`Project with id ${id} not found`);
-  }
-
-  await db.put(STORE_NAME, { ...existing, ...updates });
+export async function saveProject(project) {
+  await initStore();
+  await db.put(STORE_NAME, project);
 }
 
 /**
- * Delete a project from the database
+ * Delete a project
  * @param {string} id - Project ID
  * @returns {Promise<void>}
  */
 export async function deleteProject(id) {
-  if (!db) await initProjectStore();
+  await initStore();
   await db.delete(STORE_NAME, id);
 }
 
 /**
- * Get projects with "aktiv" status
- * @returns {Promise<ProjectConfig[]>}
+ * Format all active projects as context for LLM prompt
+ * @returns {Promise<string>}
  */
-export async function getActiveProjects() {
-  if (!db) await initProjectStore();
-  const tx = db.transaction(STORE_NAME, "readonly");
-  const store = tx.objectStore(STORE_NAME);
-  const index = store.index("status");
-  return index.getAll("aktiv");
+export async function getProjectsAsContext() {
+  const projects = await getProjects();
+  const activeProjects = projects.filter((p) => p.status === "aktiv");
+
+  if (activeProjects.length === 0) {
+    return "Keine aktiven Projekte vorhanden.";
+  }
+
+  return activeProjects
+    .map(
+      (p) =>
+        `Projekt: ${p.name}\nBeschreibung: ${p.description}\nTechnologien: ${
+          p.technologies?.join(", ") || "keine"
+        }\nHerausforderungen: ${p.challenges?.join(", ") || "keine"}\n---`
+    )
+    .join("\n");
 }
 
 // Default sample projects for initial setup
@@ -125,7 +99,8 @@ export const defaultProjects = [
   {
     id: "proj-1",
     name: "Fahrzeug-Tracking System",
-    description: "Echtzeit-Tracking aller Busse und Bahnen mit GPS und IoT-Sensoren für präzise Ankunftszeiten.",
+    description:
+      "Echtzeit-Tracking aller Busse und Bahnen mit GPS und IoT-Sensoren für präzise Ankunftszeiten.",
     technologies: ["GPS", "IoT", "LoRaWAN", "Cloud"],
     status: "aktiv",
     challenges: ["Abdeckung in Tunneln", "Batterielaufzeit", "Datenschutz"],
@@ -133,7 +108,8 @@ export const defaultProjects = [
   {
     id: "proj-2",
     name: "Mobilitäts-App 2.0",
-    description: "Neue Kunden-App mit Ticketing, Echtzeitauskunft und Multimodal-Routing.",
+    description:
+      "Neue Kunden-App mit Ticketing, Echtzeitauskunft und Multimodal-Routing.",
     technologies: ["React Native", "Microservices", "Payment-APIs"],
     status: "geplant",
     challenges: ["UX-Design", "Payment-Integration", "Backend-Skalierung"],
@@ -141,7 +117,8 @@ export const defaultProjects = [
   {
     id: "proj-3",
     name: "KI-basierte Fahrplanoptimierung",
-    description: "Machine Learning Modelle zur Vorhersage von Fahrgastaufkommen und dynamischen Fahrplananpassung.",
+    description:
+      "Machine Learning Modelle zur Vorhersage von Fahrgastaufkommen und dynamischen Fahrplananpassung.",
     technologies: ["Python", "TensorFlow", "Big Data"],
     status: "aktiv",
     challenges: ["Datenqualität", "Modell-Training", "Change Management"],
@@ -153,8 +130,6 @@ export const defaultProjects = [
  * @returns {Promise<void>}
  */
 export async function initDefaultProjects() {
-  if (!db) await initProjectStore();
-  
   const existing = await getProjects();
   if (existing.length === 0) {
     for (const project of defaultProjects) {
@@ -164,13 +139,10 @@ export async function initDefaultProjects() {
 }
 
 export default {
-  initProjectStore,
-  saveProject,
   getProjects,
-  getProjectById,
-  updateProject,
+  saveProject,
   deleteProject,
-  getActiveProjects,
+  getProjectsAsContext,
   initDefaultProjects,
   defaultProjects,
 };

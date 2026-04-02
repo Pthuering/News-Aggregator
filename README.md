@@ -106,7 +106,7 @@ Da RSS-Feeds CORS-Header blockieren, wird ein Proxy benötigt:
 
 Für die Entwicklung können Sie einen lokalen Proxy verwenden oder Test-Feeds mocken.
 
-## Anthropic API Key einrichten
+## NVIDIA API Key einrichten
 
 1. Konto bei [Anthropic](https://www.anthropic.com/) erstellen
 2. API-Key generieren
