@@ -132,7 +132,7 @@ export async function getAllArticles() {
 export async function getUnclassifiedArticles() {
   if (!db) await initDB();
   const all = await db.getAll(STORE_NAME);
-  return all.filter((a) => a.scores === undefined);
+  return all.filter((a) => !a.scores);
 }
 
 /**
