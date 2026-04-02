@@ -1,0 +1,12 @@
+{
+  "name": "trend-radar-cors-proxy",
+  "version": "1.0.0",
+  "description": "CORS Proxy for Trend Radar RSS feeds",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy"
+  },
+  "devDependencies": {
+    "wrangler": "^3.0.0"
+  }
+}

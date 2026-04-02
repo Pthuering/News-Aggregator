@@ -18,7 +18,7 @@ import { useState, useEffect } from "react";
 import {
   getAllSettings,
   setSetting,
-  setAnthropicApiKey,
+  setNvidiaApiKey,
 } from "../stores/settingsStore.js";
 
 function Settings({ onClose }) {
@@ -36,7 +36,7 @@ function Settings({ onClose }) {
     try {
       const all = await getAllSettings();
       setSettings(all);
-      setApiKey(all.anthropicApiKey || "");
+      setApiKey(all.nvidiaApiKey || "");
     } catch (error) {
       console.error("Failed to load settings:", error);
     } finally {
@@ -46,7 +46,7 @@ function Settings({ onClose }) {
 
   // Save API key
   const handleSaveApiKey = async () => {
-    await setAnthropicApiKey(apiKey);
+    await setNvidiaApiKey(apiKey);
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
   };
@@ -91,13 +91,13 @@ function Settings({ onClose }) {
       </div>
 
       <div className="space-y-8">
-        {/* Anthropic API Key */}
+        {/* NVIDIA API Key */}
         <section>
           <h3 className="text-lg font-semibold text-gray-800 mb-3">
-            Anthropic API Key
+            NVIDIA API Key
           </h3>
           <p className="text-sm text-gray-600 mb-3">
-            Für die KI-gestützte Artikel-Klassifizierung benötigen Sie einen API-Key von Anthropic.
+            Für die KI-gestützte Artikel-Klassifizierung benötigen Sie einen API-Key von NVIDIA.
             Dieser wird lokal in Ihrem Browser gespeichert.
           </p>
           <div className="flex gap-2">
@@ -105,7 +105,7 @@ function Settings({ onClose }) {
               type="password"
               value={apiKey}
               onChange={(e) => setApiKey(e.target.value)}
-              placeholder="sk-ant-api03-..."
+              placeholder="nvapi-..."
               className="flex-1 px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
             <button

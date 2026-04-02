@@ -5,7 +5,7 @@
  * @reads    settings.js → database config
  * @writes   IndexedDB → settings store
  * @calledBy Settings.jsx → read/write settings
- * @calledBy classifyService.js → read Anthropic API key
+ * @calledBy classifyService.js → read NVIDIA API key
  *
  * @dataflow Settings → IndexedDB → CRUD operations
  *
@@ -15,32 +15,33 @@
  *   setSetting(key: string, value: any): Promise<void> – Set a setting value
  *   getAllSettings(): Promise<Object> – Get all settings
  *   clearSettings(): Promise<void> – Clear all settings
+ *   getNvidiaApiKey(): Promise<string> – Get NVIDIA API key
+ *   setNvidiaApiKey(apiKey: string): Promise<void> – Set NVIDIA API key
  *
  * @errors Logs errors to console, throws for critical failures
  */
 
 import { openDB } from "idb";
-import { settings } from "../config/settings.js";
 
-const DB_NAME = settings.database.name;
-const DB_VERSION = settings.database.version;
-const STORE_NAME = settings.database.stores.settings;
+const DB_NAME = "NewsAggregatorDB";
+const DB_VERSION = 1;
+const STORE_NAME = "settings";
 
 let db = null;
 
 // Default settings
 const defaultSettings = {
-  // Anthropic API Key (user must set this)
-  anthropicApiKey: "",
+  // NVIDIA API Key (user must set this)
+  nvidiaApiKey: "",
   // UI preferences
-  theme: "system", // "light" | "dark" | "system"
+  theme: "system",
   sidebarCollapsed: false,
   // Feed preferences
   autoFetchOnStartup: false,
   fetchIntervalMinutes: 60,
   // Classification preferences
   autoClassify: false,
-  classificationThreshold: 5, // Minimum score to show article
+  classificationThreshold: 5,
   // Report preferences
   defaultReportLength: "mittel",
   defaultReportAudience: "fachabteilung",
@@ -133,29 +134,29 @@ export async function clearSettings() {
 }
 
 /**
- * Check if Anthropic API key is configured
+ * Check if NVIDIA API key is configured
  * @returns {Promise<boolean>}
  */
-export async function hasAnthropicApiKey() {
-  const key = await getSetting("anthropicApiKey");
+export async function hasNvidiaApiKey() {
+  const key = await getSetting("nvidiaApiKey");
   return key && key.length > 0;
 }
 
 /**
- * Get Anthropic API key
+ * Get NVIDIA API key
  * @returns {Promise<string>}
  */
-export async function getAnthropicApiKey() {
-  return getSetting("anthropicApiKey");
+export async function getNvidiaApiKey() {
+  return getSetting("nvidiaApiKey");
 }
 
 /**
- * Set Anthropic API key
+ * Set NVIDIA API key
  * @param {string} apiKey
  * @returns {Promise<void>}
  */
-export async function setAnthropicApiKey(apiKey) {
-  return setSetting("anthropicApiKey", apiKey);
+export async function setNvidiaApiKey(apiKey) {
+  return setSetting("nvidiaApiKey", apiKey);
 }
 
 export default {
@@ -164,7 +165,7 @@ export default {
   setSetting,
   getAllSettings,
   clearSettings,
-  hasAnthropicApiKey,
-  getAnthropicApiKey,
-  setAnthropicApiKey,
+  hasNvidiaApiKey,
+  getNvidiaApiKey,
+  setNvidiaApiKey,
 };
