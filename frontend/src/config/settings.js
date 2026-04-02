@@ -14,7 +14,7 @@
  */
 
 // CORS Proxy URL
-const PROXY_URL = "https://newsaggregator.philipp-thuering.workers.dev";
+const PROXY_URL = "https://newsagg3.philipp-thuering.workers.dev";
 
 /**
  * Get the CORS proxy URL
