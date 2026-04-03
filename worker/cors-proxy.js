@@ -54,6 +54,7 @@ export default {
 async function handleNvidiaProxy(request) {
   try {
     const body = await request.json();
+    const isStream = body.stream === true;
     
     // Forward to NVIDIA API
     const nvidiaResponse = await fetch("https://integrate.api.nvidia.com/v1/chat/completions", {
@@ -65,7 +66,26 @@ async function handleNvidiaProxy(request) {
       body: JSON.stringify(body),
     });
 
-    // Clone response and add CORS headers
+    const corsHeaders = {
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type, Authorization",
+    };
+
+    // For streaming: pipe the response body through directly
+    if (isStream && nvidiaResponse.ok && nvidiaResponse.body) {
+      return new Response(nvidiaResponse.body, {
+        status: nvidiaResponse.status,
+        headers: {
+          "Content-Type": "text/event-stream",
+          "Cache-Control": "no-cache",
+          "Connection": "keep-alive",
+          ...corsHeaders,
+        },
+      });
+    }
+
+    // Non-streaming: buffer and return
     const responseBody = await nvidiaResponse.arrayBuffer();
     
     return new Response(responseBody, {
@@ -73,9 +93,7 @@ async function handleNvidiaProxy(request) {
       statusText: nvidiaResponse.statusText,
       headers: {
         "Content-Type": "application/json",
-        "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-        "Access-Control-Allow-Headers": "Content-Type, Authorization",
+        ...corsHeaders,
       },
     });
   } catch (error) {

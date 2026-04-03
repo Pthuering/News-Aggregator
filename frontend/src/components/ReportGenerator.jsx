@@ -89,16 +89,18 @@ function ReportGenerator({ articleIds, onClose }) {
     
     setGenerating(true);
     setError(null);
-    setReport(null);
+    setReport("");
     setGeneratingStatus("Report wird generiert, bitte warten...");
     
     try {
       const result = await generateReport({
         articleIds: articles.map(a => a.id),
         ...config,
+      }, (partialText) => {
+        setReport(partialText);
       });
-      setGeneratingStatus("Report fertig!");
       setReport(result);
+      setGeneratingStatus("");
     } catch (err) {
       setError(err.message || "Report-Generierung fehlgeschlagen");
     } finally {
@@ -181,34 +183,46 @@ function ReportGenerator({ articleIds, onClose }) {
         {/* Content */}
         <div className="flex-1 overflow-auto p-6">
           {report ? (
-            // Report result view
+            // Report result view (also shown during streaming)
             <div className="space-y-4">
               <div className="flex items-center justify-between">
-                <h3 className="font-semibold text-gray-700">Generierter Report</h3>
-                <div className="flex gap-2">
-                  <button
-                    onClick={handleCopy}
-                    className="px-3 py-1.5 text-sm bg-gray-100 text-gray-700 rounded hover:bg-gray-200 transition-colors"
-                  >
-                    {copied ? "Kopiert!" : "Kopieren"}
-                  </button>
-                  <button
-                    onClick={handleDownload}
-                    className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
-                  >
-                    Als Markdown speichern
-                  </button>
-                  <button
-                    onClick={() => setReport(null)}
-                    className="px-3 py-1.5 text-sm bg-purple-600 text-white rounded hover:bg-purple-700 transition-colors"
-                  >
-                    Neu generieren
-                  </button>
-                </div>
+                <h3 className="font-semibold text-gray-700">
+                  {generating ? "Report wird generiert..." : "Generierter Report"}
+                </h3>
+                {!generating && (
+                  <div className="flex gap-2">
+                    <button
+                      onClick={handleCopy}
+                      className="px-3 py-1.5 text-sm bg-gray-100 text-gray-700 rounded hover:bg-gray-200 transition-colors"
+                    >
+                      {copied ? "Kopiert!" : "Kopieren"}
+                    </button>
+                    <button
+                      onClick={handleDownload}
+                      className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
+                    >
+                      Als Markdown speichern
+                    </button>
+                    <button
+                      onClick={() => setReport(null)}
+                      className="px-3 py-1.5 text-sm bg-purple-600 text-white rounded hover:bg-purple-700 transition-colors"
+                    >
+                      Neu generieren
+                    </button>
+                  </div>
+                )}
               </div>
+              
+              {generating && (
+                <div className="text-sm text-gray-500 flex items-center gap-2">
+                  <span style={{ display: 'inline-block', width: 12, height: 12, border: '2px solid #d1d5db', borderTopColor: '#7c3aed', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
+                  {generatingStatus}
+                </div>
+              )}
               
               <div 
                 className="prose max-w-none bg-gray-50 p-4 rounded-lg border border-gray-200"
+                style={{ whiteSpace: 'pre-wrap', minHeight: generating ? '200px' : undefined }}
                 dangerouslySetInnerHTML={{ __html: renderMarkdown(report) }}
               />
             </div>

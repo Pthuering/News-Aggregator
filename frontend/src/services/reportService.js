@@ -76,7 +76,7 @@ function buildUserMessage(articles, includeUserNotes) {
  * @returns {Promise<string>} - Generated markdown report
  * @throws {Error} - If API key missing, no articles, or API fails
  */
-export async function generateReport(config) {
+export async function generateReport(config, onChunk) {
   const { articleIds, audience, focus, length, includeUserNotes } = config;
 
   // Validate API key
@@ -106,9 +106,6 @@ export async function generateReport(config) {
   // Build prompts
   const systemPrompt = getReportPrompt({ audience, focus, length });
   const userMessage = buildUserMessage(articles, includeUserNotes);
-  
-  // Determine max_tokens based on desired length
-  const maxTokens = 50000;
 
   // API call with retries
   let lastError;
@@ -127,8 +124,8 @@ export async function generateReport(config) {
             { role: "user", content: userMessage },
           ],
           temperature: 0.5,
-          max_tokens: maxTokens,
-          stream: false,
+          max_tokens: 5000000,
+          stream: true,
         }),
       });
       
@@ -136,14 +133,43 @@ export async function generateReport(config) {
         const errorData = await response.json().catch(() => ({}));
         throw new Error(`API-Fehler: ${errorData.message || response.statusText}`);
       }
-      
-      const data = await response.json();
-      
-      if (data.choices && data.choices[0] && data.choices[0].message) {
-        return data.choices[0].message.content.trim();
+
+      // Parse SSE stream
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let fullText = "";
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        // Keep last potentially incomplete line in buffer
+        buffer = lines.pop() || "";
+
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed || !trimmed.startsWith("data: ")) continue;
+          const data = trimmed.slice(6);
+          if (data === "[DONE]") continue;
+
+          try {
+            const parsed = JSON.parse(data);
+            const delta = parsed.choices?.[0]?.delta?.content;
+            if (delta) {
+              fullText += delta;
+              if (onChunk) onChunk(fullText);
+            }
+          } catch {
+            // skip malformed chunks
+          }
+        }
       }
-      
-      throw new Error("Ungültige API-Antwort");
+
+      if (fullText) return fullText.trim();
+      throw new Error("Keine Antwort von der API erhalten");
     } catch (error) {
       lastError = error;
       console.warn(`Report generation attempt ${attempt + 1} failed:`, error);
