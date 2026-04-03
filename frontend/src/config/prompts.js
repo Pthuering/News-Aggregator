@@ -53,7 +53,7 @@ Niedrige Scores (0-3) für: Allgemeine Tech-Funding-Runden ohne Mobility-Bezug, 
 - reasoning: kompakte Begründung der Score-Vergabe (max 2-3 Sätze)
 
 **WICHTIG - JSON FORMAT:**
-- NUR valides JSON zurückgeben, kein Markdown (keine ```json Blöcke!)
+- NUR valides JSON zurückgeben, kein Markdown (keine \`\`\`json Blöcke!)
 - ALLE Strings müssen in doppelten Anführungszeichen stehen: "text" nicht text
 - KEINE einfachen Anführungszeichen ' statt "
 - KEINE Kommas nach dem letzten Element in Arrays/Objekten
