@@ -50,12 +50,16 @@ export const INITIAL_FILTERS = {
   sortBy: "newest", // "newest" | "oldest" | "relevance" | "score_oepnv" | "score_tech"
 };
 
-// Lens configuration for UI
+// Lens configuration for UI - using explicit Tailwind classes (not dynamic!)
 const LENSES = [
-  { key: "oepnv_direkt", label: "ÖPNV", color: "blue", description: "ÖPNV-Direkt" },
-  { key: "tech_transfer", label: "Tech", color: "purple", description: "Technologie-Transfer" },
-  { key: "foerder", label: "Förder", color: "green", description: "Förderlandschaft" },
-  { key: "markt", label: "Markt", color: "orange", description: "Wettbewerb & Markt" },
+  { key: "oepnv_direkt", label: "ÖPNV", description: "ÖPNV-Direkt",
+    bgClass: "bg-blue-50", borderClass: "border-blue-100", barClass: "bg-blue-500" },
+  { key: "tech_transfer", label: "Tech", description: "Technologie-Transfer",
+    bgClass: "bg-purple-50", borderClass: "border-purple-100", barClass: "bg-purple-500" },
+  { key: "foerder", label: "Förder", description: "Förderlandschaft",
+    bgClass: "bg-green-50", borderClass: "border-green-100", barClass: "bg-green-500" },
+  { key: "markt", label: "Markt", description: "Wettbewerb & Markt",
+    bgClass: "bg-orange-50", borderClass: "border-orange-100", barClass: "bg-orange-500" },
 ];
 
 // Category labels
@@ -227,7 +231,7 @@ function FilterBar({ filters = INITIAL_FILTERS, onFilterChange, availableTags = 
             </h4>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               {LENSES.map((lens) => (
-                <div key={lens.key} className={`p-3 bg-${lens.color}-50 rounded-lg border border-${lens.color}-100`}>
+                <div key={lens.key} className={`p-3 ${lens.bgClass} rounded-lg border ${lens.borderClass}`}>
                   <label className="block text-xs font-medium text-gray-700 mb-2">
                     {lens.label}
                   </label>
@@ -260,7 +264,7 @@ function FilterBar({ filters = INITIAL_FILTERS, onFilterChange, availableTags = 
                         <div
                           key={i}
                           className={`flex-1 h-1.5 rounded-sm ${
-                            active ? `bg-${lens.color}-500` : "bg-gray-200"
+                            active ? lens.barClass : "bg-gray-200"
                           }`}
                         />
                       );
