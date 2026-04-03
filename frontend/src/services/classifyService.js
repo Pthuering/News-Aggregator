@@ -308,33 +308,130 @@ export async function classifySingle(article) {
 const MAX_CONTENT_LENGTH = 2000; // Max chars per article content
 
 /**
+ * Optimize content before classification by removing non-semantic elements.
+ * Conservative approach: Only removes things that definitely don't carry meaning.
+ * Preserves: all words (including stopwords), negations, technical terms, context.
+ */
+function optimizeContent(content) {
+  if (!content || content.length < 500) return content; // Don't optimize short content
+  
+  let optimized = content;
+  const originalLength = content.length;
+  
+  // 1. Remove HTML/Script/CSS blocks completely
+  optimized = optimized.replace(/<script[^>]*>[\s\S]*?<\/script>/gi, ' ');
+  optimized = optimized.replace(/<style[^>]*>[\s\S]*?<\/style>/gi, ' ');
+  optimized = optimized.replace(/<iframe[^>]*>[\s\S]*?<\/iframe>/gi, ' ');
+  optimized = optimized.replace(/<nav[^>]*>[\s\S]*?<\/nav>/gi, ' ');
+  optimized = optimized.replace(/<footer[^>]*>[\s\S]*?<\/footer>/gi, ' ');
+  
+  // 2. Remove cookie banner and privacy notice patterns (common German phrases)
+  const privacyPatterns = [
+    /Diese\s+Website\s+verwendet\s+Cookies[\s\S]{0,500}?Akzeptieren/gi,
+    /Wir\s+nutzen\s+Cookies[\s\S]{0,500}?Mehr\s+erfahren/gi,
+    /Cookie-Einstellungen[\s\S]{0,300}?Datenschutz/gi,
+    /Mit\s+der\s+Nutzung\s+unserer\s+Website[\s\S]{0,400}?Einverstanden/gi,
+    /\[.*?Datenschutzerklärung.*?\]/gi,
+    /Impressum\s*:\s*[^\n]{0,200}/gi,
+    /©\s*\d{4}[^\n]{0,100}/gi,
+  ];
+  privacyPatterns.forEach(pattern => {
+    optimized = optimized.replace(pattern, ' ');
+  });
+  
+  // 3. Remove journalist filler phrases (don't carry semantic value)
+  const fillerPatterns = [
+    /wie\s+berichtet[.,]?/gi,
+    /wie\s+mitgeteilt\s+wurde[.,]?/gi,
+    /laut\s+Angaben[^.]{0,50}[.]/gi,
+    /wie\s+hervorgeht[.,]?/gi,
+    /so\s+das\s+Unternehmen[.,]?/gi,
+    /wie\s+es\s+heißt[.,]?/gi,
+    /es\s+ist\s+davon\s+auszugehen[.,]?/gi,
+    /es\s+bleibt\s+abzuwarten[.,]?/gi,
+    /das\s+soll[^.]{0,30}ermöglichen/gi,
+    /\.\.\.\s*mehr\s*lesen/gi,
+    /Weiterlesen[\s]*→?/gi,
+    /Lesen\s+Sie\s+auch[\s\S]{0,200}/gi,
+  ];
+  fillerPatterns.forEach(pattern => {
+    optimized = optimized.replace(pattern, ' ');
+  });
+  
+  // 4. Remove marketing fluff adjectives (replace with space to preserve word boundaries)
+  // Only standalone, not part of compound words
+  const fluffWords = [
+    /\bhervorragend\b/gi,
+    /\bexzellent\b/gi,
+    /\bbahnbrechend\b/gi,
+    /\brevolutionär\b/gi,
+    /\beinzigartig\b/gi,
+    /\bmarktführend\b/gi,
+    /\bworld-class\b/gi,
+    /\bbest-in-class\b/gi,
+    /\btop\b(?=\s+(quality|service|product))/gi,
+  ];
+  fluffWords.forEach(pattern => {
+    optimized = optimized.replace(pattern, ' ');
+  });
+  
+  // 5. Remove social media and sharing prompts
+  optimized = optimized.replace(/Folgen\s+Sie\s+uns\s+auf[\s\S]{0,300}/gi, ' ');
+  optimized = optimized.replace(/Teilen\s+Sie\s+diesen\s+Artikel[\s\S]{0,200}/gi, ' ');
+  optimized = optimized.replace(/Artikel\s+teilen[\s\S]{0,200}/gi, ' ');
+  
+  // 6. Remove newsletter signup sections
+  optimized = optimized.replace(/Newsletter[\s\S]{0,400}?anmelden/gi, ' ');
+  optimized = optimized.replace(/Abonnieren\s+Sie[\s\S]{0,300}?Newsletter/gi, ' ');
+  
+  // 7. Collapse multiple whitespace
+  optimized = optimized.replace(/\s+/g, ' ').trim();
+  
+  const savings = originalLength - optimized.length;
+  const percent = Math.round((savings / originalLength) * 100);
+  
+  if (savings > 100) {
+    console.log(`[Optimize] Reduced ${originalLength} → ${optimized.length} chars (${percent}% saved)`);
+  }
+  
+  return optimized;
+}
+
+/**
  * Format articles for classification prompt
  */
 function formatArticlesForClassification(articles) {
   console.log(`[Classify] Formatting ${articles.length} articles, max ${MAX_CONTENT_LENGTH} chars each`);
   
-  if (articles.length === 1) {
-    const a = articles[0];
-    const content = a.content.substring(0, MAX_CONTENT_LENGTH);
-    console.log(`[Classify] Single article content length: ${content.length} chars`);
+  // Pre-process articles with content optimization
+  const processedArticles = articles.map((a, i) => {
+    const optimized = optimizeContent(a.content);
+    const truncated = optimized.substring(0, MAX_CONTENT_LENGTH);
+    console.log(`[Classify] Article ${i + 1} optimized: ${a.content.length} → ${optimized.length} → ${truncated.length} chars`);
+    return {
+      ...a,
+      content: truncated
+    };
+  });
+  
+  if (processedArticles.length === 1) {
+    const a = processedArticles[0];
     return `Bewerte folgenden Artikel:
 
 Titel: ${a.title}
 Quelle: ${a.source}
 Datum: ${a.published}
-Inhalt: ${content}`;
+Inhalt: ${a.content}`;
   }
 
   let message = `Bewerte folgende Artikel. Gib ein JSON-Array zurück, ein Objekt pro Artikel, in derselben Reihenfolge.\n\n`;
 
-  articles.forEach((a, i) => {
-    const content = a.content.substring(0, MAX_CONTENT_LENGTH);
-    console.log(`[Classify] Article ${i + 1} content length: ${content.length} chars`);
+  processedArticles.forEach((a, i) => {
     message += `--- Artikel ${i + 1} ---\n`;
     message += `Titel: ${a.title}\n`;
     message += `Quelle: ${a.source}\n`;
     message += `Datum: ${a.published}\n`;
-    message += `Inhalt: ${content}\n\n`;
+    message += `Inhalt: ${a.content}\n\n`;
   });
 
   return message;
