@@ -236,33 +236,34 @@ function App() {
           </div>
 
           {/* Simple Filters */}
-          <div style={{ display: "flex", gap: "10px", flexWrap: "wrap", padding: "20px", background: "#ff0000", borderRadius: "8px", border: "5px solid black", marginTop: "10px" }}>
+          <div className="flex flex-wrap gap-3 p-4 bg-white border border-gray-200 rounded-lg shadow-sm mt-4">
             <input
               type="text"
               placeholder="Suchen..."
               value={searchText}
               onChange={(e) => setSearchText(e.target.value)}
-              style={{ padding: "8px 12px", border: "1px solid #ccc", borderRadius: "4px", flex: "1", minWidth: "200px" }}
+              className="flex-1 min-w-[200px] px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
             />
             <select
               value={selectedCategory}
               onChange={(e) => setSelectedCategory(e.target.value)}
-              style={{ padding: "8px 12px", border: "1px solid #ccc", borderRadius: "4px" }}
+              className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
             >
               <option value="all">Alle Kategorien</option>
               {categories.filter(c => c !== "all").map(c => (
                 <option key={c} value={c}>{c}</option>
               ))}
             </select>
-            <label style={{ display: "flex", alignItems: "center", gap: "5px", fontSize: "14px" }}>
+            <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
               <input
                 type="checkbox"
                 checked={showClassifiedOnly}
                 onChange={(e) => setShowClassifiedOnly(e.target.checked)}
+                className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
               />
               Nur klassifiziert
             </label>
-            <label style={{ display: "flex", alignItems: "center", gap: "5px", fontSize: "14px" }}>
+            <label className="flex items-center gap-2 text-sm text-gray-700">
               Min Score:
               <input
                 type="number"
@@ -270,7 +271,7 @@ function App() {
                 max="10"
                 value={minScore}
                 onChange={(e) => setMinScore(parseInt(e.target.value) || 0)}
-                style={{ width: "50px", padding: "4px" }}
+                className="w-14 px-2 py-1 border border-gray-300 rounded-md text-sm"
               />
             </label>
           </div>
