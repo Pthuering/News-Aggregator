@@ -1,99 +1,181 @@
 /**
  * @module reportService
- * @purpose Generate markdown reports from articles
+ * @purpose Generiert Markdown-Reports aus ausgewählten Artikeln
  *
- * @reads    prompts.js → reportPrompt
- * @reads    settingsStore.js → getAnthropicApiKey()
- * @calledBy ReportGenerator.jsx → on generate
- * @calls    Anthropic API → for AI-generated reports
+ * @reads    config/prompts.js → getReportPrompt()
+ * @reads    stores/articleStore.js → getArticleById()
+ * @reads    stores/settingsStore.js → getNvidiaApiKey()
+ * @writes   nichts (gibt Markdown-String zurück)
+ * @calledBy components/ReportGenerator.jsx
  *
- * @dataflow ReportConfig + Articles → AI/Template → Markdown
+ * @dataflow
+ *   articleIds → Artikel aus Store laden → mit User-Notes anreichern
+ *   → Prompt bauen (System + Artikel-Kontext) → API-Call
+ *   → Markdown-Response zurückgeben
  *
  * @exports
- *   generateReport(config: ReportConfig, articles: EnrichedArticle[]): Promise<string>
- *   generateSimpleReport(config: ReportConfig, articles: EnrichedArticle[]): string
+ *   generateReport(config: ReportConfig): Promise<string>
+ *     → Gibt fertigen Markdown-Report zurück
  *
- * @errors Falls back to template if AI fails
+ * @errors
+ *   - Kein API-Key: Error werfen
+ *   - Keine Artikel gefunden: Error werfen
+ *   - API-Fehler: Retry 2x, dann Error
  */
 
-import { reportPrompt } from "../config/prompts.js";
-import { getAnthropicApiKey } from "../stores/settingsStore.js";
-import { settings } from "../config/settings.js";
+import { getReportPrompt } from "../config/prompts.js";
+import { getNvidiaApiKey } from "../stores/settingsStore.js";
+import { getArticleById } from "../stores/articleStore.js";
+import { API_CONFIG } from "../config/settings.js";
+
+// Use first worker for report generation (single request, larger payload)
+const WORKER_URL = "https://rss-proxy-1.philipp-thuering.workers.dev";
+
+/**
+ * Build user message with articles context
+ * @param {EnrichedArticle[]} articles - Selected articles
+ * @param {boolean} includeUserNotes - Whether to include user notes
+ * @returns {string}
+ */
+function buildUserMessage(articles, includeUserNotes) {
+  let message = "Erstelle einen Report basierend auf folgenden Artikeln:\n\n";
+  
+  articles.forEach((article, index) => {
+    message += `--- Artikel ${index + 1} ---\n`;
+    message += `Titel: ${article.title}\n`;
+    message += `Quelle: ${article.source}\n`;
+    message += `Datum: ${article.published}\n`;
+    
+    if (article.summary_de) {
+      message += `Zusammenfassung: ${article.summary_de}\n`;
+    }
+    
+    if (article.scores) {
+      message += `Scores: ÖV=${article.scores.oepnv_direkt}, TT=${article.scores.tech_transfer}, FÖ=${article.scores.foerder}, MA=${article.scores.markt}\n`;
+    }
+    
+    if (article.tags && article.tags.length > 0) {
+      message += `Tags: ${article.tags.join(", ")}\n`;
+    }
+    
+    if (includeUserNotes && article.userNotes) {
+      message += `Eigene Notizen: ${article.userNotes}\n`;
+    } else {
+      message += `Eigene Notizen: keine\n`;
+    }
+    
+    message += "\n";
+  });
+  
+  return message;
+}
 
 /**
  * Generate a report using AI
  * @param {ReportConfig} config - Report configuration
- * @param {EnrichedArticle[]} articles - Selected articles
  * @returns {Promise<string>} - Generated markdown report
+ * @throws {Error} - If API key missing, no articles, or API fails
  */
-export async function generateReport(config, articles) {
-  const apiKey = await getAnthropicApiKey();
+export async function generateReport(config) {
+  const { articleIds, audience, focus, length, includeUserNotes } = config;
   
+  // Validate API key
+  const apiKey = await getNvidiaApiKey();
   if (!apiKey) {
-    console.warn("No API key, falling back to template report");
-    return generateSimpleReport(config, articles);
+    throw new Error("Kein API-Key vorhanden. Bitte in den Einstellungen hinterlegen.");
   }
-
-  // Prepare articles summary
-  const articlesText = articles
-    .map(
-      (a, i) => `
-${i + 1}. ${a.title}
-   Quelle: ${a.source}
-   ${a.summary_de || a.content.substring(0, 300) + "..."}
-   ${a.userNotes ? `Notizen: ${a.userNotes}` : ""}
-`
-    )
-    .join("\n");
-
-  const prompt = reportPrompt
-    .replace("{{length}}", config.length)
-    .replace("{{audience}}", config.audience)
-    .replace("{{focus}}", config.focus)
-    .replace("{{articles}}", articlesText)
-    .replace("{{#includeUserNotes}}", config.includeUserNotes ? "true" : "")
-    .replace("{{userNotes}}", config.includeUserNotes ? "Nutzer-Notizen sind enthalten" : "");
-
-  try {
-    const response = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": apiKey,
-        "anthropic-version": "2023-06-01",
-      },
-      body: JSON.stringify({
-        model: settings.anthropic.model,
-        max_tokens: settings.anthropic.maxTokens,
-        temperature: 0.5,
-        messages: [
-          {
-            role: "user",
-            content: prompt,
-          },
-        ],
-      }),
-    });
-
-    if (!response.ok) {
-      throw new Error("API request failed");
+  
+  // Validate articles
+  if (!articleIds || articleIds.length === 0) {
+    throw new Error("Keine Artikel ausgewählt.");
+  }
+  
+  // Load articles from store
+  const articles = [];
+  for (const id of articleIds) {
+    const article = await getArticleById(id);
+    if (article) {
+      articles.push(article);
     }
-
-    const data = await response.json();
-    return data.content[0].text;
-  } catch (error) {
-    console.error("AI report generation failed:", error);
-    return generateSimpleReport(config, articles);
   }
+  
+  if (articles.length === 0) {
+    throw new Error("Keine Artikel gefunden.");
+  }
+  
+  // Build prompts
+  const systemPrompt = getReportPrompt({ audience, focus, length });
+  const userMessage = buildUserMessage(articles, includeUserNotes);
+  
+  // API call with retries
+  let lastError;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const response = await fetch(`${WORKER_URL}/api/nvidia`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+          model: API_CONFIG.model,
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: userMessage },
+          ],
+          temperature: 0.5,
+          max_tokens: 2000, // Reports are longer than classifications
+          stream: false,
+        }),
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(`API-Fehler: ${errorData.message || response.statusText}`);
+      }
+      
+      const data = await response.json();
+      
+      if (data.choices && data.choices[0] && data.choices[0].message) {
+        return data.choices[0].message.content.trim();
+      }
+      
+      throw new Error("Ungültige API-Antwort");
+    } catch (error) {
+      lastError = error;
+      console.warn(`Report generation attempt ${attempt + 1} failed:`, error);
+      
+      // Wait before retry (exponential backoff)
+      if (attempt < 2) {
+        await new Promise(resolve => setTimeout(resolve, 1000 * Math.pow(2, attempt)));
+      }
+    }
+  }
+  
+  throw new Error(`Report-Generierung fehlgeschlagen nach 3 Versuchen: ${lastError.message}`);
 }
 
 /**
- * Generate a simple template-based report
+ * Generate a simple template-based report (fallback)
  * @param {ReportConfig} config - Report configuration
- * @param {EnrichedArticle[]} articles - Selected articles
- * @returns {string} - Markdown report
+ * @returns {Promise<string>} - Markdown report
  */
-export function generateSimpleReport(config, articles) {
+export async function generateSimpleReport(config) {
+  const { articleIds, includeUserNotes } = config;
+  
+  // Load articles from store
+  const articles = [];
+  for (const id of articleIds) {
+    const article = await getArticleById(id);
+    if (article) {
+      articles.push(article);
+    }
+  }
+  
+  if (articles.length === 0) {
+    throw new Error("Keine Artikel gefunden.");
+  }
+  
   const now = new Date().toLocaleDateString("de-DE");
   
   const audienceLabels = {
@@ -112,7 +194,7 @@ export function generateSimpleReport(config, articles) {
   let report = `# Trend Radar Report
 
 **Datum:** ${now}  
-**Zielgruppe:** ${audienceLabels[config.audience] || config.ausience}  
+**Zielgruppe:** ${audienceLabels[config.audience] || config.audience}  
 **Fokus:** ${focusLabels[config.focus] || config.focus}  
 **Ausgewählte Artikel:** ${articles.length}
 
@@ -152,7 +234,7 @@ ${article.summary_de || article.content.substring(0, 500) + "..."}
       report += `- Marktrelevanz: ${article.scores.markt}/10  \n\n`;
     }
 
-    if (config.includeUserNotes && article.userNotes) {
+    if (includeUserNotes && article.userNotes) {
       report += `**Notizen:** ${article.userNotes}\n\n`;
     }
 
@@ -179,7 +261,7 @@ ${article.summary_de || article.content.substring(0, 500) + "..."}
  * @param {string} filename - Filename
  */
 export function downloadReport(content, filename = "report.md") {
-  const blob = new Blob([content], { type: "text/markdown" });
+  const blob = new Blob([content], { type: "text/markdown;charset=utf-8" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
@@ -190,8 +272,24 @@ export function downloadReport(content, filename = "report.md") {
   URL.revokeObjectURL(url);
 }
 
+/**
+ * Copy report to clipboard
+ * @param {string} content - Report content
+ * @returns {Promise<boolean>}
+ */
+export async function copyReportToClipboard(content) {
+  try {
+    await navigator.clipboard.writeText(content);
+    return true;
+  } catch (error) {
+    console.error("Failed to copy to clipboard:", error);
+    return false;
+  }
+}
+
 export default {
   generateReport,
   generateSimpleReport,
   downloadReport,
+  copyReportToClipboard,
 };

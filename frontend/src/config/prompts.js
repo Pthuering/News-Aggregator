@@ -89,13 +89,99 @@ export function getMatchPrompt(projectsContext) {
 
 /**
  * Returns the system prompt for report generation.
- * TODO: Implement in Phase 4
+ * Adapts to audience, focus, and length parameters.
  * @param {object} config - Report configuration
  * @returns {string}
  */
 export function getReportPrompt(config) {
-  // TODO: Implement in Phase 4 - Report Generation
-  return "";
+  const { audience, focus, length } = config;
+  
+  // Audience-specific instructions
+  const audienceInstructions = {
+    geschaeftsfuehrung: `Zielgruppe: Geschäftsführung
+- Fokus auf strategische Bedeutung und Business-Impact
+- Konkrete Handlungsempfehlungen
+- Formale, kompakte Sprache
+- Vermeide zu technische Details`,
+    fachabteilung: `Zielgruppe: Fachabteilung
+- Technische Details sind erwünscht und relevant
+- Konkrete nächste Schritte und Umsetzungshinweise
+- Fachliche, direkte Sprache
+- Praktische Anwendbarkeit im Vordergrund`,
+    foerderantrag: `Zielgruppe: Förderantrag-Vorbereitung
+- Fokus auf Förderfähigkeit und Innovationsgehalt
+- Bezug zu deutschen Förderrichtlinien (BMDV, BMWK, EU)
+- Fürderantrag-typische Sprache
+- Relevanz für öffentliche Förderprogramme betonen`,
+  };
+  
+  // Focus-specific instructions
+  const focusInstructions = {
+    technologie: `Fokus: Technologie
+- Technische Einordnung und Reifegrad
+- Umsetzbarkeit und Integration
+- Technische Voraussetzungen
+- Vergleich mit bestehenden Lösungen`,
+    wettbewerb: `Fokus: Wettbewerb
+- Marktüberblick und Positionierung
+- Handlungsdruck und Zeitfaktor
+- Wettbewerbsvorteile identifizieren
+- Marktentwicklung einschätzen`,
+    foerderpotential: `Fokus: Förderpotential
+- Passende Förderprogramme identifizieren
+- Antragsrelevanz bewerten
+- Förderquoten und Bedingungen
+- Zeitliche Einordnung von Ausschreibungen`,
+    allgemein: `Fokus: Allgemein
+- Ausgewogene Mischung aller Aspekte
+- Sowohl technisch als auch strategisch
+- Kurz- bis mittelfristige Relevanz
+- Überblickscharakter`,
+  };
+  
+  // Length-specific instructions
+  const lengthInstructions = {
+    kurz: `Länge: Kurz (Executive Summary)
+- Maximal 300 Wörter
+- Kompakte Zusammenfassung
+- Nur die wichtigsten Erkenntnisse
+- Bullet Points wo sinnvoll`,
+    mittel: `Länge: Mittel (Strukturierter Bericht)
+- Ca. 500-800 Wörter
+- Klare Struktur mit Überschriften
+- Ausgewogene Detailtiefe
+- Praktische Empfehlungen`,
+    detail: `Länge: Detail (Ausführlicher Report)
+- 1000-1500 Wörter
+- Umfassende Analyse mit Unterabschnitten
+- Detaillierte Begründungen
+- Mehrere Handlungsempfehlungen`,
+  };
+  
+  return `Du bist ein Analyst in der Digitalisierungsabteilung eines deutschen Verkehrsunternehmens (ÖPNV).
+Erstelle einen professionellen Report basierend auf den bereitgestellten Artikeln.
+
+${audienceInstructions[audience] || audienceInstructions.fachabteilung}
+
+${focusInstructions[focus] || focusInstructions.allgemein}
+
+${lengthInstructions[length] || lengthInstructions.mittel}
+
+**Format:**
+Gib den Report als Markdown zurück mit sinnvoller Struktur:
+- Überschriften (# ## ###)
+- Aufzählungen wo angebracht
+- Fettgedruckte Schlüsselpunkte
+- Klare Abschnitte
+
+**Inhaltliche Anforderungen:**
+- Verarbeite ALLE bereitgestellten Artikel in den Report
+- Berücksichtige die vier Bewertungsdimensionen (ÖPNV-Direkt, Tech-Transfer, Förder, Markt)
+- Hebe Synergien zwischen Artikeln hervor
+- Formuliere konkrete, umsetzbare Empfehlungen
+- Beziehe dich auf deutschen ÖPNV-Kontext
+
+Wenn Eigene Notizen vorhanden sind, integriere sie als zusätzliche Perspektive.`;
 }
 
 export default {
