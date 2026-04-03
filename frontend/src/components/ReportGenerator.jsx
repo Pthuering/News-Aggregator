@@ -141,8 +141,11 @@ function ReportGenerator({ articleIds, onClose }) {
 
   if (loading) {
     return (
-      <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-        <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-hidden">
+      <div
+        className="fixed flex items-center justify-center p-4"
+        style={{ zIndex: 9999, top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.7)' }}
+      >
+        <div className="bg-white rounded-lg shadow-xl w-full" style={{ maxWidth: '900px', maxHeight: '90vh', overflow: 'hidden' }}>
           <div className="p-8 text-center text-gray-500">Lade Artikel...</div>
         </div>
       </div>
@@ -150,8 +153,16 @@ function ReportGenerator({ articleIds, onClose }) {
   }
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-      <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+    <div
+      className="fixed flex items-center justify-center p-4"
+      style={{ zIndex: 9999, top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.7)' }}
+      onClick={onClose}
+    >
+      <div
+        className="bg-white rounded-lg shadow-xl w-full flex flex-col"
+        style={{ maxWidth: '900px', maxHeight: '90vh', overflow: 'hidden' }}
+        onClick={(e) => e.stopPropagation()}
+      >
         {/* Header */}
         <div className="p-4 border-b border-gray-200 flex items-center justify-between">
           <h2 className="text-xl font-bold text-gray-900">Report erstellen</h2>
