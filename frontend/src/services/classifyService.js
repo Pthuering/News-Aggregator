@@ -341,42 +341,131 @@ Inhalt: ${content}`;
 }
 
 /**
- * Parse the classification response
+ * Repair common JSON errors from LLM outputs
+ * Fixes: missing quotes around keys/values, trailing commas, unquoted strings
+ */
+function repairJson(jsonString) {
+  let repaired = jsonString;
+  
+  // Remove markdown code blocks
+  repaired = repaired.replace(/```json\s*/g, "").replace(/```\s*/g, "").trim();
+  
+  // Extract JSON array or object if surrounded by text
+  const arrayMatch = repaired.match(/\[[\s\S]*\]/);
+  const objectMatch = repaired.match(/\{[\s\S]*\}/);
+  
+  if (arrayMatch && repaired.includes("[")) {
+    repaired = arrayMatch[0];
+  } else if (objectMatch && repaired.includes("{")) {
+    repaired = objectMatch[0];
+  }
+  
+  // Fix 1: Add quotes around unquoted object keys (word: → "word":)
+  repaired = repaired.replace(/([{,]\s*)([a-zA-Z_][a-zA-Z0-9_]*)\s*:/g, '$1"$2":');
+  
+  // Fix 2: Add quotes around string values that aren't quoted
+  // Match: "key": value (where value is not a number, boolean, null, or quoted string)
+  // This is tricky - we target common patterns like reasoning: text without quotes
+  
+  // Fix unquoted strings in known fields (reasoning, summary_de)
+  // Pattern: "reasoning": some text without quotes until newline or comma or }
+  repaired = repaired.replace(/("reasoning"\s*:\s*)([^"\[\{\]\}\d][^,\n\}]*)($|[,\n\}])/g, function(match, p1, p2, p3) {
+    const trimmed = p2.trim();
+    // Don't quote if it's already a quoted string, number, boolean, null
+    if (/^".*"$/.test(trimmed) || /^\d+$/.test(trimmed) || /^(true|false|null)$/.test(trimmed)) {
+      return match;
+    }
+    return p1 + '"' + trimmed.replace(/"/g, '\\"') + '"' + p3;
+  });
+  
+  repaired = repaired.replace(/("summary_de"\s*:\s*)([^"\[\{\]\}\d][^,\n\}]*)($|[,\n\}])/g, function(match, p1, p2, p3) {
+    const trimmed = p2.trim();
+    if (/^".*"$/.test(trimmed) || /^\d+$/.test(trimmed) || /^(true|false|null)$/.test(trimmed)) {
+      return match;
+    }
+    return p1 + '"' + trimmed.replace(/"/g, '\\"') + '"' + p3;
+  });
+  
+  // Fix 3: Remove trailing commas before } or ]
+  repaired = repaired.replace(/,\s*([}\]])/g, "$1");
+  
+  // Fix 4: Replace single quotes with double quotes (but escape existing double quotes first)
+  // This is risky, so we do it carefully
+  repaired = repaired.replace(/'/g, '"');
+  
+  // Fix 5: Fix escaped newlines in strings
+  repaired = repaired.replace(/\n/g, "\\n");
+  
+  return repaired;
+}
+
+/**
+ * Parse the classification response with repair fallback
  */
 function parseClassificationResponse(content, expectedCount) {
   console.log(`[Classify] Parsing response for ${expectedCount} expected results`);
+  
+  // First try: direct parse
   try {
-    let cleanContent = content.replace(/```json|```/g, "").trim();
-    console.log(`[Classify] Cleaned content (first 200 chars): ${cleanContent.substring(0, 200)}...`);
-
-    let results;
-    if (cleanContent.startsWith("[")) {
-      results = JSON.parse(cleanContent);
-      console.log(`[Classify] Parsed array with ${results.length} results`);
-    } else if (cleanContent.startsWith("{")) {
-      results = [JSON.parse(cleanContent)];
-      console.log(`[Classify] Parsed single object`);
-    } else {
-      throw new Error("Invalid JSON format - doesn't start with [ or {");
-    }
-
-    if (results.length !== expectedCount) {
-      console.warn(`[Classify] Warning: Expected ${expectedCount} results, got ${results.length}`);
-    }
-
-    return results.map((r, i) => {
-      console.log(`[Classify] Result ${i + 1}: scores=${JSON.stringify(r.scores)}, tags=${r.tags?.length || 0}`);
-      return {
-        scores: r.scores || { oepnv_direkt: 0, tech_transfer: 0, foerder: 0, markt: 0 },
-        tags: r.tags || [],
-        summary_de: r.summary_de || "",
-        reasoning: r.reasoning || "",
-      };
-    });
-  } catch (error) {
-    console.error("[Classify] Failed to parse classification response:", content.substring(0, 500));
-    throw new Error("Invalid classification response: " + error.message);
+    const result = tryParseJson(content);
+    console.log(`[Classify] Direct parse successful`);
+    return validateAndFormatResults(result, expectedCount);
+  } catch (directError) {
+    console.log(`[Classify] Direct parse failed: ${directError.message}`);
   }
+  
+  // Second try: repair and parse
+  console.log(`[Classify] Attempting JSON repair...`);
+  const repaired = repairJson(content);
+  console.log(`[Classify] Repaired JSON (first 200 chars): ${repaired.substring(0, 200)}...`);
+  
+  try {
+    const result = tryParseJson(repaired);
+    console.log(`[Classify] Repair successful!`);
+    return validateAndFormatResults(result, expectedCount);
+  } catch (repairError) {
+    console.error(`[Classify] Repair also failed: ${repairError.message}`);
+    console.error(`[Classify] Original content:`, content.substring(0, 500));
+    throw new Error("Invalid classification response: " + repairError.message);
+  }
+}
+
+/**
+ * Try to parse JSON, handling both arrays and single objects
+ */
+function tryParseJson(content) {
+  let cleanContent = content.replace(/```json|```/g, "").trim();
+  
+  if (cleanContent.startsWith("[")) {
+    return JSON.parse(cleanContent);
+  } else if (cleanContent.startsWith("{")) {
+    return [JSON.parse(cleanContent)];
+  } else {
+    throw new Error("Invalid JSON format - doesn't start with [ or {");
+  }
+}
+
+/**
+ * Validate and format parsed results
+ */
+function validateAndFormatResults(results, expectedCount) {
+  if (!Array.isArray(results)) {
+    results = [results];
+  }
+  
+  if (results.length !== expectedCount) {
+    console.warn(`[Classify] Warning: Expected ${expectedCount} results, got ${results.length}`);
+  }
+
+  return results.map((r, i) => {
+    console.log(`[Classify] Result ${i + 1}: scores=${JSON.stringify(r.scores)}, tags=${r.tags?.length || 0}`);
+    return {
+      scores: r.scores || { oepnv_direkt: 0, tech_transfer: 0, foerder: 0, markt: 0 },
+      tags: r.tags || [],
+      summary_de: r.summary_de || "",
+      reasoning: r.reasoning || "",
+    };
+  });
 }
 
 export default {

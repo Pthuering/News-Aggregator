@@ -51,22 +51,29 @@ Niedrige Scores (0-3) für: Allgemeine Tech-Funding-Runden ohne Mobility-Bezug, 
 - Tags: maximal 5, kleingeschrieben, deutsch, mit Bindestrichen (z.B. "fahrgastinfo", "echtzeit-daten")
 - summary_de: immer deutsch, auch wenn Artikel englisch ist (2-3 Sätze)
 - reasoning: kompakte Begründung der Score-Vergabe (max 2-3 Sätze)
-- NUR valides JSON zurückgeben, kein Markdown, keine Erklärungen drumherum
 
-**OUTPUT-FORMAT (JSON):**
+**WICHTIG - JSON FORMAT:**
+- NUR valides JSON zurückgeben, kein Markdown (keine ```json Blöcke!)
+- ALLE Strings müssen in doppelten Anführungszeichen stehen: "text" nicht text
+- KEINE einfachen Anführungszeichen ' statt "
+- KEINE Kommas nach dem letzten Element in Arrays/Objekten
+- KEINE Zeilenumbrüche in Strings (\n nutzen falls nötig)
+- Strikte JSON-Syntax beachten!
+
+**OUTPUT-FORMAT (striktes JSON):**
 {
   "scores": {
-    "oepnv_direkt": 0-10,
-    "tech_transfer": 0-10,
-    "foerder": 0-10,
-    "markt": 0-10
+    "oepnv_direkt": 0,
+    "tech_transfer": 0,
+    "foerder": 0,
+    "markt": 0
   },
-  "tags": ["tag1", "tag2", "tag3", "tag4", "tag5"],
-  "summary_de": "Zwei bis drei Sätze auf Deutsch, die den Kern des Artikels zusammenfassen.",
-  "reasoning": "Kurze Begründung der Score-Vergabe über alle vier Linsen."
+  "tags": ["tag1", "tag2"],
+  "summary_de": "Zwei bis drei Sätze auf Deutsch.",
+  "reasoning": "Kurze Begründung der Scores."
 }
 
-Bei mehreren Artikeln gib ein Array dieser Objekte zurück, in der gleichen Reihenfolge wie die Input-Artikel.`;
+Bei mehreren Artikeln gib ein ARRAY [ {...}, {...} ] dieser Objekte zurück, in der gleichen Reihenfolge wie die Input-Artikel.`;
 }
 
 /**
