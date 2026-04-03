@@ -149,9 +149,39 @@ export async function classifyNew(onProgress) {
         
         updateProgress(workerIndex, (i + 1) * batch.length);
       } catch (error) {
-        // Mark all articles in failed batch as failed
-        for (const article of batch) {
-          results.push({ success: false, articleId: article.id, error: error.message });
+        const isTokenError = error.message?.includes("token") || 
+                            error.message?.includes("too long") || 
+                            error.message?.includes("context length");
+        
+        // If token error and batch has multiple articles, try individually
+        if (isTokenError && batch.length > 1) {
+          console.log(`[Classify] Token error on batch, trying ${batch.length} articles individually`);
+          
+          for (const article of batch) {
+            try {
+              const singleResults = await classifyBatchWithWorker(workerUrl, apiKey, [article]);
+              if (singleResults[0]) {
+                await updateArticle(article.id, {
+                  scores: singleResults[0].scores,
+                  tags: singleResults[0].tags,
+                  summary_de: singleResults[0].summary_de,
+                  reasoning: singleResults[0].reasoning,
+                  classifiedAt: new Date().toISOString(),
+                });
+                results.push({ success: true, articleId: article.id });
+              } else {
+                results.push({ success: false, articleId: article.id, error: "No result" });
+              }
+            } catch (singleError) {
+              console.error(`[Classify] Individual article failed:`, article.id, singleError.message);
+              results.push({ success: false, articleId: article.id, error: singleError.message });
+            }
+          }
+        } else {
+          // Mark all articles in failed batch as failed
+          for (const article of batch) {
+            results.push({ success: false, articleId: article.id, error: error.message });
+          }
         }
         updateProgress(workerIndex, (i + 1) * batch.length);
       }
@@ -198,7 +228,7 @@ async function classifyBatchWithWorker(workerUrl, apiKey, articles) {
       { role: "system", content: systemPrompt },
       { role: "user", content: userMessage },
     ],
-    max_tokens: API_CONFIG.maxTokens * articles.length,
+    max_tokens: API_CONFIG.maxTokens,
     temperature: 0.3,
   };
 
@@ -275,7 +305,7 @@ export async function classifySingle(article) {
   };
 }
 
-const MAX_CONTENT_LENGTH = 1500; // Reduced from 2000 to avoid token limits
+const MAX_CONTENT_LENGTH = 2000; // Max chars per article content
 
 /**
  * Format articles for classification prompt
