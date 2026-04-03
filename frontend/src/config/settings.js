@@ -25,10 +25,10 @@ export function getProxyUrl() {
 }
 
 /**
- * NVIDIA API configuration (via OpenAI client)
+ * NVIDIA API configuration
  */
 export const API_CONFIG = {
-  model: "nvidia/llama-3.1-nemotron-nano-8b-v1:free",
+  model: "z-ai/glm4.7",
   maxTokens: 1500,
 };
 
