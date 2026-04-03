@@ -17,7 +17,7 @@ mit internen Projekten.
 
 - **Frontend**: React 19, Vite, Tailwind CSS
 - **Daten**: IndexedDB via `idb`-Library
-- **LLM**: Anthropic API (Claude), client-seitig
+- **LLM**: NVIDIA API (via Cloudflare Proxy), client-seitig
 - **RSS-Proxy**: Cloudflare Worker (löst CORS-Problem)
 - **Hosting**: GitHub Pages (statisch)
 
@@ -108,7 +108,7 @@ Für die Entwicklung können Sie einen lokalen Proxy verwenden oder Test-Feeds m
 
 ## NVIDIA API Key einrichten
 
-1. Konto bei [Anthropic](https://www.anthropic.com/) erstellen
+1. Konto bei [NVIDIA](https://build.nvidia.com/) erstellen
 2. API-Key generieren
 3. In der App unter "Einstellungen" eintragen
 

@@ -8,13 +8,13 @@ und unterstützt beim Erstellen von Reports und dem Erkennen von Synergien
 mit internen Projekten.
 
 Läuft komplett im Browser. Kein Backend. GitHub Pages als Hosting.
-Daten leben in IndexedDB. LLM-Calls gehen client-seitig an die Anthropic API.
+Daten leben in IndexedDB. LLM-Calls gehen client-seitig an die NVIDIA API via Cloudflare Proxy.
 
 ## Tech-Stack
 
 - **Frontend**: React (Vite), Tailwind CSS
 - **Daten**: IndexedDB via `idb`-Library
-- **LLM**: Anthropic API (claude-sonnet-4-20250514), client-seitig
+- **LLM**: NVIDIA API (via Cloudflare Workers Proxy), client-seitig
 - **RSS-Proxy**: Cloudflare Worker (löst CORS-Problem)
 - **Hosting**: GitHub Pages (statisch)
 - **Build**: Vite → dist/ → GitHub Pages Deploy
@@ -48,7 +48,7 @@ Jeder Schritt wird manuell per Button ausgelöst, nicht automatisch.
   source: string,          // Quellname aus sources.js
   sourceCategory: string,  // "branche"|"tech"|"foerder"|"startup"|"international"
   published: string,       // ISO-8601
-  content: string,         // max 4000 Zeichen
+  content: string,         // max 4000 Zeichen (optimiert + truncated)
   fetchedAt: string        // ISO-8601
 }
 ```

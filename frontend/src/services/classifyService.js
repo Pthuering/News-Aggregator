@@ -305,7 +305,7 @@ export async function classifySingle(article) {
   };
 }
 
-const MAX_CONTENT_LENGTH = 2000; // Max chars per article content
+const MAX_CONTENT_LENGTH = 4000; // Max chars per article content (ARCHITECTURE.md Standard)
 
 /**
  * Optimize content before classification by removing non-semantic elements.
