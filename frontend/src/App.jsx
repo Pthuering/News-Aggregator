@@ -11,6 +11,7 @@ import { fetchAllFeeds } from "./services/feedService.js";
 import { classifyNew } from "./services/classifyService.js";
 import { getNvidiaApiKey } from "./stores/settingsStore.js";
 import Settings from "./components/Settings.jsx";
+import FilterBar, { INITIAL_FILTERS } from "./components/FilterBar.jsx";
 
 function App() {
   const [articles, setArticles] = useState([]);
@@ -23,11 +24,7 @@ function App() {
   const [classifyResult, setClassifyResult] = useState(null);
   const [showSettings, setShowSettings] = useState(false);
   const [initialized, setInitialized] = useState(false);
-  // Simple filters
-  const [searchText, setSearchText] = useState("");
-  const [selectedCategory, setSelectedCategory] = useState("all");
-  const [minScore, setMinScore] = useState(0);
-  const [showClassifiedOnly, setShowClassifiedOnly] = useState(false);
+  const [filters, setFilters] = useState(INITIAL_FILTERS);
 
   // Initialize DB and check API key on mount
   useEffect(() => {
@@ -130,51 +127,101 @@ function App() {
     return "bg-green-100 text-green-800";
   };
 
-  // Get unique categories
-  const categories = useMemo(() => {
-    const cats = new Set(articles.map((a) => a.sourceCategory));
-    return ["all", ...Array.from(cats)];
+  // Collect unique tags from all articles
+  const availableTags = useMemo(() => {
+    const tagSet = new Set();
+    articles.forEach((a) => {
+      if (a.tags) a.tags.forEach((t) => tagSet.add(t));
+    });
+    return Array.from(tagSet).sort();
   }, [articles]);
 
-  // Simple filter logic
+  // Filter + sort logic driven by FilterBar state
   const filteredArticles = useMemo(() => {
     let result = [...articles];
 
     // Text search
-    if (searchText) {
-      const lower = searchText.toLowerCase();
+    if (filters.search) {
+      const lower = filters.search.toLowerCase();
       result = result.filter(
         (a) =>
           a.title.toLowerCase().includes(lower) ||
-          a.content.toLowerCase().includes(lower) ||
-          (a.summary_de && a.summary_de.toLowerCase().includes(lower))
+          (a.content && a.content.toLowerCase().includes(lower)) ||
+          (a.summary_de && a.summary_de.toLowerCase().includes(lower)) ||
+          (a.tags && a.tags.some((t) => t.toLowerCase().includes(lower)))
       );
     }
 
     // Category filter
-    if (selectedCategory !== "all") {
-      result = result.filter((a) => a.sourceCategory === selectedCategory);
+    if (filters.category !== "all") {
+      result = result.filter((a) => a.sourceCategory === filters.category);
     }
 
     // Classified only
-    if (showClassifiedOnly) {
+    if (filters.classifiedOnly) {
       result = result.filter((a) => a.classifiedAt && a.scores);
     }
 
-    // Min score filter (any lens)
-    if (minScore > 0) {
-      result = result.filter(
-        (a) =>
-          a.scores &&
-          Object.values(a.scores).some((s) => s >= minScore)
-      );
+    // Per-lens score ranges
+    if (filters.scores) {
+      result = result.filter((a) => {
+        if (!a.scores) return true; // don't hide unscored articles via score filter
+        return Object.entries(filters.scores).every(([lens, { min, max }]) => {
+          const val = a.scores[lens];
+          if (val === undefined) return true;
+          return val >= min && val <= max;
+        });
+      });
     }
 
-    // Sort by date
-    result.sort((a, b) => new Date(b.published) - new Date(a.published));
+    // Tag filter
+    if (filters.tags && filters.tags.length > 0) {
+      result = result.filter((a) => {
+        if (!a.tags || a.tags.length === 0) return false;
+        if (filters.tagMatch === "all") {
+          return filters.tags.every((t) => a.tags.includes(t));
+        }
+        return filters.tags.some((t) => a.tags.includes(t));
+      });
+    }
+
+    // Date range
+    if (filters.dateFrom) {
+      const from = new Date(filters.dateFrom);
+      result = result.filter((a) => new Date(a.published) >= from);
+    }
+    if (filters.dateTo) {
+      const to = new Date(filters.dateTo);
+      to.setHours(23, 59, 59, 999);
+      result = result.filter((a) => new Date(a.published) <= to);
+    }
+
+    // Sorting
+    const sortBy = filters.sortBy || "newest";
+    result.sort((a, b) => {
+      switch (sortBy) {
+        case "oldest":
+          return new Date(a.published) - new Date(b.published);
+        case "relevance": {
+          const sumA = a.scores ? Object.values(a.scores).reduce((s, v) => s + v, 0) : 0;
+          const sumB = b.scores ? Object.values(b.scores).reduce((s, v) => s + v, 0) : 0;
+          return sumB - sumA;
+        }
+        case "score_oepnv":
+          return (b.scores?.oepnv_direkt || 0) - (a.scores?.oepnv_direkt || 0);
+        case "score_tech":
+          return (b.scores?.tech_transfer || 0) - (a.scores?.tech_transfer || 0);
+        case "score_foerder":
+          return (b.scores?.foerder || 0) - (a.scores?.foerder || 0);
+        case "score_markt":
+          return (b.scores?.markt || 0) - (a.scores?.markt || 0);
+        default: // newest
+          return new Date(b.published) - new Date(a.published);
+      }
+    });
 
     return result;
-  }, [articles, searchText, selectedCategory, showClassifiedOnly, minScore]);
+  }, [articles, filters]);
 
   if (!initialized) {
     return (
@@ -235,46 +282,13 @@ function App() {
             </button>
           </div>
 
-          {/* Simple Filters */}
-          <div className="flex flex-wrap gap-3 p-4 bg-white border border-gray-200 rounded-lg shadow-sm mt-4">
-            <input
-              type="text"
-              placeholder="Suchen..."
-              value={searchText}
-              onChange={(e) => setSearchText(e.target.value)}
-              className="flex-1 min-w-[200px] px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-            />
-            <select
-              value={selectedCategory}
-              onChange={(e) => setSelectedCategory(e.target.value)}
-              className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-            >
-              <option value="all">Alle Kategorien</option>
-              {categories.filter(c => c !== "all").map(c => (
-                <option key={c} value={c}>{c}</option>
-              ))}
-            </select>
-            <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={showClassifiedOnly}
-                onChange={(e) => setShowClassifiedOnly(e.target.checked)}
-                className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
-              />
-              Nur klassifiziert
-            </label>
-            <label className="flex items-center gap-2 text-sm text-gray-700">
-              Min Score:
-              <input
-                type="number"
-                min="0"
-                max="10"
-                value={minScore}
-                onChange={(e) => setMinScore(parseInt(e.target.value) || 0)}
-                className="w-14 px-2 py-1 border border-gray-300 rounded-md text-sm"
-              />
-            </label>
-          </div>
+          {/* FilterBar */}
+          <FilterBar
+            filters={filters}
+            onFilterChange={setFilters}
+            availableTags={availableTags}
+            className="mt-4 shadow-sm"
+          />
         </div>
 
         {/* Feed result summary */}
