@@ -46,6 +46,9 @@ export const INITIAL_FILTERS = {
   // Classification status
   classifiedOnly: false,
   
+  // Bookmark filter
+  bookmarkedOnly: false,
+  
   // Sorting
   sortBy: "newest", // "newest" | "oldest" | "relevance" | "score_oepnv" | "score_tech"
 };
@@ -121,6 +124,7 @@ function FilterBar({ filters = INITIAL_FILTERS, onFilterChange, availableTags = 
       filters.dateFrom ||
       filters.dateTo ||
       filters.classifiedOnly ||
+      filters.bookmarkedOnly ||
       Object.values(filters.scores || {}).some(
         (s) => s.min > 0 || s.max < 10
       )
@@ -135,6 +139,7 @@ function FilterBar({ filters = INITIAL_FILTERS, onFilterChange, availableTags = 
     if (filters.tags?.length > 0) count++;
     if (filters.dateFrom || filters.dateTo) count++;
     if (filters.classifiedOnly) count++;
+    if (filters.bookmarkedOnly) count++;
     if (Object.values(filters.scores || {}).some((s) => s.min > 0 || s.max < 10)) count++;
     return count;
   })();
@@ -209,16 +214,43 @@ function FilterBar({ filters = INITIAL_FILTERS, onFilterChange, availableTags = 
           </div>
         </div>
 
-        {/* Quick classified filter */}
-        <label className="flex items-center gap-2 cursor-pointer">
-          <input
-            type="checkbox"
-            checked={filters.classifiedOnly || false}
-            onChange={(e) => onFilterChange({ ...filters, classifiedOnly: e.target.checked })}
-            className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
-          />
-          <span className="text-sm text-gray-700">Nur klassifizierte Artikel</span>
-        </label>
+        {/* Quick filters row */}
+        <div className="flex flex-wrap items-center gap-4">
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={filters.classifiedOnly || false}
+              onChange={(e) => onFilterChange({ ...filters, classifiedOnly: e.target.checked })}
+              className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
+            />
+            <span className="text-sm text-gray-700">Nur klassifizierte</span>
+          </label>
+
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={filters.bookmarkedOnly || false}
+              onChange={(e) => onFilterChange({ ...filters, bookmarkedOnly: e.target.checked })}
+              className="w-4 h-4 text-yellow-500 rounded focus:ring-yellow-500"
+            />
+            <span className="text-sm text-gray-700">Nur gemerkte</span>
+          </label>
+
+          {/* Article counts */}
+          {filters.articleCounts && (
+            <div className="ml-auto text-sm text-gray-500">
+              <span className="font-medium text-gray-700">{filters.articleCounts.filtered}</span>
+              {' '}von{' '}
+              <span className="font-medium text-gray-700">{filters.articleCounts.total}</span>
+              {' '}Artikeln
+              {filters.articleCounts.unclassified > 0 && (
+                <span className="text-gray-400 ml-1">
+                  ({filters.articleCounts.unclassified} unklassifiziert)
+                </span>
+              )}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Advanced filters - expandable */}

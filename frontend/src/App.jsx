@@ -6,12 +6,13 @@
  */
 
 import { useState, useEffect, useMemo } from "react";
-import { initDB, getAllArticles, getUnclassifiedArticles } from "./stores/articleStore.js";
+import { initDB, getAllArticles, getUnclassifiedArticles, updateArticle } from "./stores/articleStore.js";
 import { fetchAllFeeds } from "./services/feedService.js";
 import { classifyNew } from "./services/classifyService.js";
 import { getNvidiaApiKey } from "./stores/settingsStore.js";
 import Settings from "./components/Settings.jsx";
 import FilterBar, { INITIAL_FILTERS } from "./components/FilterBar.jsx";
+import ArticleDetail from "./components/ArticleDetail.jsx";
 
 function App() {
   const [articles, setArticles] = useState([]);
@@ -25,6 +26,7 @@ function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [initialized, setInitialized] = useState(false);
   const [filters, setFilters] = useState(INITIAL_FILTERS);
+  const [selectedArticle, setSelectedArticle] = useState(null);
 
   // Initialize DB and check API key on mount
   useEffect(() => {
@@ -136,6 +138,16 @@ function App() {
     return Array.from(tagSet).sort();
   }, [articles]);
 
+  // Bookmark toggle handler for list items
+  const handleBookmarkToggle = async (e, article) => {
+    e.stopPropagation();
+    e.preventDefault();
+    const updated = { ...article, bookmarked: !article.bookmarked };
+    await updateArticle(article.id, { bookmarked: updated.bookmarked });
+    // Update local state
+    setArticles(prev => prev.map(a => a.id === article.id ? updated : a));
+  };
+
   // Filter + sort logic driven by FilterBar state
   const filteredArticles = useMemo(() => {
     let result = [...articles];
@@ -160,6 +172,11 @@ function App() {
     // Classified only
     if (filters.classifiedOnly) {
       result = result.filter((a) => a.classifiedAt && a.scores);
+    }
+
+    // Bookmarked only (only filter if explicitly enabled and there are bookmarked articles)
+    if (filters.bookmarkedOnly) {
+      result = result.filter((a) => a.bookmarked === true);
     }
 
     // Per-lens score ranges
@@ -223,10 +240,98 @@ function App() {
     return result;
   }, [articles, filters]);
 
+  // Article counts for FilterBar
+  const articleCounts = useMemo(() => ({
+    total: articles.length,
+    filtered: filteredArticles.length,
+    unclassified: articles.filter(a => !a.scores).length,
+  }), [articles, filteredArticles.length]);
+
+  // Handle article click - open detail view
+  const handleArticleClick = (article) => {
+    setSelectedArticle(article);
+    window.scrollTo(0, 0);
+  };
+
+  // Handle back from detail view
+  const handleBackToList = () => {
+    setSelectedArticle(null);
+  };
+
+  // Handle article update from detail view
+  const handleArticleUpdate = (updated) => {
+    setArticles(prev => prev.map(a => a.id === updated.id ? updated : a));
+    setSelectedArticle(updated);
+  };
+
   if (!initialized) {
     return (
       <div className="min-h-screen bg-gray-100 flex items-center justify-center">
         <div className="text-xl text-gray-600">Initialisiere...</div>
+      </div>
+    );
+  }
+
+  // Detail view
+  if (selectedArticle) {
+    return (
+      <div className="min-h-screen bg-gray-100">
+        {/* Header */}
+        <header className="bg-white shadow-sm border-b border-gray-200">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="flex items-center justify-between h-16">
+              <div className="flex items-center gap-4">
+                <button
+                  onClick={handleBackToList}
+                  className="px-3 py-1.5 text-sm bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200 transition-colors"
+                >
+                  ← Zurück
+                </button>
+                <h1 className="text-xl font-bold text-gray-900">Artikel-Detail</h1>
+              </div>
+              <button
+                onClick={() => setShowSettings(true)}
+                className="px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 transition-colors"
+              >
+                Einstellungen
+              </button>
+            </div>
+          </div>
+        </header>
+
+        {/* Main content */}
+        <main className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+          <ArticleDetail
+            article={selectedArticle}
+            onClose={handleBackToList}
+            onUpdate={handleArticleUpdate}
+          />
+        </main>
+
+        {/* Settings Modal */}
+        {showSettings && (
+          <div 
+            className="fixed inset-0 flex items-center justify-center p-4"
+            style={{ 
+              zIndex: 9999, 
+              position: 'fixed', 
+              top: 0, 
+              left: 0, 
+              right: 0, 
+              bottom: 0,
+              backgroundColor: 'rgba(0, 0, 0, 0.7)'
+            }}
+            onClick={() => setShowSettings(false)}
+          >
+            <div 
+              className="bg-white rounded-lg shadow-2xl w-full"
+              style={{ maxWidth: '500px', maxHeight: '90vh', overflow: 'auto' }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <Settings onClose={() => { setShowSettings(false); checkApiKey(); }} />
+            </div>
+          </div>
+        )}
       </div>
     );
   }
@@ -284,7 +389,7 @@ function App() {
 
           {/* FilterBar */}
           <FilterBar
-            filters={filters}
+            filters={{ ...filters, articleCounts }}
             onFilterChange={setFilters}
             availableTags={availableTags}
             className="mt-4 shadow-sm"
@@ -361,19 +466,26 @@ function App() {
               {filteredArticles.map((article) => (
                 <li
                   key={article.id}
-                  className={`p-4 hover:bg-gray-50 ${
+                  onClick={() => handleArticleClick(article)}
+                  className={`p-4 hover:bg-gray-50 cursor-pointer ${
                     !article.scores ? "opacity-70" : ""
                   }`}
                 >
-                  <a
-                    href={article.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="block"
-                  >
-                    {/* Title */}
-                    <div className="text-sm font-medium text-blue-600 hover:text-blue-800">
-                      {article.title}
+                  <div className="block">
+                    {/* Title + Bookmark */}
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="text-sm font-medium text-blue-600 hover:text-blue-800 flex-1">
+                        {article.title}
+                      </div>
+                      <button
+                        onClick={(e) => handleBookmarkToggle(e, article)}
+                        className={`p-1 rounded hover:bg-gray-200 transition-colors ${
+                          article.bookmarked ? 'text-yellow-500' : 'text-gray-300'
+                        }`}
+                        title={article.bookmarked ? "Lesezeichen entfernen" : "Lesezeichen setzen"}
+                      >
+                        <span className="text-lg">★</span>
+                      </button>
                     </div>
 
                     {/* Meta info */}
@@ -382,6 +494,16 @@ function App() {
                       {!article.scores && (
                         <span className="ml-2 text-gray-400">(unklassifiziert)</span>
                       )}
+                      <a
+                        href={article.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={(e) => e.stopPropagation()}
+                        className="ml-2 text-blue-500 hover:text-blue-700"
+                        title="Original öffnen"
+                      >
+                        ↗
+                      </a>
                     </div>
 
                     {/* Summary */}
