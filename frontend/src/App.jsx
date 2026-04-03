@@ -5,12 +5,13 @@
  * Kontext: Phase 2d - Wire classify to UI
  */
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { initDB, getAllArticles, getUnclassifiedArticles } from "./stores/articleStore.js";
 import { fetchAllFeeds } from "./services/feedService.js";
 import { classifyNew } from "./services/classifyService.js";
 import { getNvidiaApiKey } from "./stores/settingsStore.js";
 import Settings from "./components/Settings.jsx";
+import FilterBar, { INITIAL_FILTERS } from "./components/FilterBar.jsx";
 
 function App() {
   const [articles, setArticles] = useState([]);
@@ -23,6 +24,7 @@ function App() {
   const [classifyResult, setClassifyResult] = useState(null);
   const [showSettings, setShowSettings] = useState(false);
   const [initialized, setInitialized] = useState(false);
+  const [filters, setFilters] = useState(INITIAL_FILTERS);
 
   // Initialize DB and check API key on mount
   useEffect(() => {
@@ -125,6 +127,117 @@ function App() {
     return "bg-green-100 text-green-800";
   };
 
+  // Get all unique tags from classified articles
+  const availableTags = useMemo(() => {
+    const tagSet = new Set();
+    articles.forEach((a) => {
+      if (a.tags) {
+        a.tags.forEach((tag) => tagSet.add(tag));
+      }
+    });
+    return Array.from(tagSet).sort();
+  }, [articles]);
+
+  // Filter articles based on filter state
+  const filteredArticles = useMemo(() => {
+    let result = [...articles];
+
+    // Text search (title, content, summary, tags)
+    if (filters.search) {
+      const lowerSearch = filters.search.toLowerCase();
+      result = result.filter(
+        (a) =>
+          a.title.toLowerCase().includes(lowerSearch) ||
+          a.content.toLowerCase().includes(lowerSearch) ||
+          (a.summary_de && a.summary_de.toLowerCase().includes(lowerSearch)) ||
+          (a.tags && a.tags.some((t) => t.toLowerCase().includes(lowerSearch)))
+      );
+    }
+
+    // Category filter
+    if (filters.category && filters.category !== "all") {
+      result = result.filter((a) => a.sourceCategory === filters.category);
+    }
+
+    // Classified only
+    if (filters.classifiedOnly) {
+      result = result.filter((a) => a.classifiedAt && a.scores);
+    }
+
+    // Score filters
+    if (filters.scores) {
+      Object.entries(filters.scores).forEach(([lens, range]) => {
+        if (range.min > 0 || range.max < 10) {
+          result = result.filter(
+            (a) =>
+              a.scores &&
+              a.scores[lens] >= range.min &&
+              a.scores[lens] <= range.max
+          );
+        }
+      });
+    }
+
+    // Tags filter
+    if (filters.tags && filters.tags.length > 0) {
+      if (filters.tagMatch === "all") {
+        // Must have ALL selected tags
+        result = result.filter(
+          (a) =>
+            a.tags && filters.tags.every((tag) => a.tags.includes(tag))
+        );
+      } else {
+        // Must have ANY of the selected tags
+        result = result.filter(
+          (a) =>
+            a.tags && filters.tags.some((tag) => a.tags.includes(tag))
+        );
+      }
+    }
+
+    // Date range
+    if (filters.dateFrom) {
+      const fromDate = new Date(filters.dateFrom);
+      result = result.filter((a) => new Date(a.published) >= fromDate);
+    }
+    if (filters.dateTo) {
+      const toDate = new Date(filters.dateTo);
+      toDate.setHours(23, 59, 59); // End of day
+      result = result.filter((a) => new Date(a.published) <= toDate);
+    }
+
+    // Sorting
+    result.sort((a, b) => {
+      switch (filters.sortBy) {
+        case "newest":
+          return new Date(b.published) - new Date(a.published);
+        case "oldest":
+          return new Date(a.published) - new Date(b.published);
+        case "relevance":
+          // Sum of all scores as relevance
+          const scoreA = a.scores
+            ? Object.values(a.scores).reduce((s, v) => s + v, 0)
+            : 0;
+          const scoreB = b.scores
+            ? Object.values(b.scores).reduce((s, v) => s + v, 0)
+            : 0;
+          return scoreB - scoreA;
+        case "score_oepnv":
+          return (b.scores?.oepnv_direkt || 0) - (a.scores?.oepnv_direkt || 0);
+        case "score_tech":
+          return (b.scores?.tech_transfer || 0) - (a.scores?.tech_transfer || 0);
+        case "score_foerder":
+          return (b.scores?.foerder || 0) - (a.scores?.foerder || 0);
+        case "score_markt":
+          return (b.scores?.markt || 0) - (a.scores?.markt || 0);
+        default:
+          return new Date(b.published) - new Date(a.published);
+      }
+    });
+
+    return result;
+  }, [articles, filters]);
+
   if (!initialized) {
     return (
       <div className="min-h-screen bg-gray-100 flex items-center justify-center">
@@ -226,11 +339,24 @@ function App() {
           </div>
         )}
 
+        {/* Filter Bar */}
+        <FilterBar
+          filters={filters}
+          onFilterChange={setFilters}
+          availableTags={availableTags}
+          className="mb-6"
+        />
+
         {/* Article list */}
         <div className="bg-white rounded-lg shadow">
-          <div className="p-4 border-b border-gray-200">
+          <div className="p-4 border-b border-gray-200 flex items-center justify-between">
             <h2 className="text-lg font-semibold text-gray-800">
-              Artikel ({articles.length})
+              Artikel ({filteredArticles.length})
+              {filteredArticles.length !== articles.length && (
+                <span className="ml-2 text-sm font-normal text-gray-500">
+                  von {articles.length}
+                </span>
+              )}
               {unclassifiedCount > 0 && (
                 <span className="ml-2 text-sm font-normal text-gray-500">
                   ({unclassifiedCount} unklassifiziert)
@@ -239,13 +365,13 @@ function App() {
             </h2>
           </div>
 
-          {articles.length === 0 ? (
+          {filteredArticles.length === 0 ? (
             <div className="p-8 text-center text-gray-500">
               Noch keine Artikel. Klicke "Feeds aktualisieren" um zu starten.
             </div>
           ) : (
             <ul className="divide-y divide-gray-200">
-              {articles.map((article) => (
+              {filteredArticles.map((article) => (
                 <li
                   key={article.id}
                   className={`p-4 hover:bg-gray-50 ${
