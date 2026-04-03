@@ -146,7 +146,10 @@ function App() {
           <div className="flex items-center justify-between h-16">
             <h1 className="text-2xl font-bold text-gray-900">Trend Radar</h1>
             <button
-              onClick={() => setShowSettings(true)}
+              onClick={() => {
+                console.log("Settings clicked");
+                setShowSettings(true);
+              }}
               className="px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 transition-colors"
             >
               Einstellungen
@@ -337,8 +340,15 @@ function App() {
 
       {/* Settings Modal */}
       {showSettings && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg shadow-xl max-w-lg w-full">
+        <div 
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4"
+          style={{ zIndex: 9999 }}
+          onClick={() => setShowSettings(false)}
+        >
+          <div 
+            className="bg-white rounded-lg shadow-xl max-w-lg w-full max-h-[90vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
             <Settings onClose={() => { setShowSettings(false); checkApiKey(); }} />
           </div>
         </div>
