@@ -268,32 +268,41 @@ function App() {
 
       {/* Main content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Action buttons */}
-        <div className="mb-6 flex flex-wrap gap-3">
-          <button
-            onClick={handleFetchFeeds}
-            disabled={loading}
-            className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-blue-400 disabled:cursor-not-allowed transition-colors"
-          >
-            {loading ? "Lädt..." : "Feeds aktualisieren"}
-          </button>
+        {/* Action buttons + Filter Bar */}
+        <div className="mb-6 space-y-4">
+          <div className="flex flex-wrap gap-3">
+            <button
+              onClick={handleFetchFeeds}
+              disabled={loading}
+              className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-blue-400 disabled:cursor-not-allowed transition-colors"
+            >
+              {loading ? "Lädt..." : "Feeds aktualisieren"}
+            </button>
 
-          <button
-            onClick={handleClassify}
-            disabled={classifyLoading || !hasApiKey || unclassifiedCount === 0}
-            title={
-              !hasApiKey
-                ? "API-Key in Einstellungen hinterlegen"
-                : unclassifiedCount === 0
-                ? "Keine unklassifizierten Artikel"
-                : ""
-            }
-            className="px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
-          >
-            {classifyLoading
-              ? `Klassifiziere... (${classifyProgress.current}/${classifyProgress.total})`
-              : `Klassifizieren (${unclassifiedCount})`}
-          </button>
+            <button
+              onClick={handleClassify}
+              disabled={classifyLoading || !hasApiKey || unclassifiedCount === 0}
+              title={
+                !hasApiKey
+                  ? "API-Key in Einstellungen hinterlegen"
+                  : unclassifiedCount === 0
+                  ? "Keine unklassifizierten Artikel"
+                  : ""
+              }
+              className="px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+            >
+              {classifyLoading
+                ? `Klassifiziere... (${classifyProgress.current}/${classifyProgress.total})`
+                : `Klassifizieren (${unclassifiedCount})`}
+            </button>
+          </div>
+
+          {/* Filter Bar - direkt unter den Buttons */}
+          <FilterBar
+            filters={filters}
+            onFilterChange={setFilters}
+            availableTags={availableTags}
+          />
         </div>
 
         {/* Feed result summary */}
@@ -338,14 +347,6 @@ function App() {
             )}
           </div>
         )}
-
-        {/* Filter Bar */}
-        <FilterBar
-          filters={filters}
-          onFilterChange={setFilters}
-          availableTags={availableTags}
-          className="mb-6"
-        />
 
         {/* Article list */}
         <div className="bg-white rounded-lg shadow">
