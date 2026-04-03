@@ -78,7 +78,7 @@ function buildUserMessage(articles, includeUserNotes) {
  */
 export async function generateReport(config) {
   const { articleIds, audience, focus, length, includeUserNotes } = config;
-  
+
   // Validate API key
   const apiKey = await getNvidiaApiKey();
   if (!apiKey) {
@@ -107,6 +107,9 @@ export async function generateReport(config) {
   const systemPrompt = getReportPrompt({ audience, focus, length });
   const userMessage = buildUserMessage(articles, includeUserNotes);
   
+  // Determine max_tokens based on desired length
+  const maxTokens = 50000;
+
   // API call with retries
   let lastError;
   for (let attempt = 0; attempt < 3; attempt++) {
@@ -124,7 +127,7 @@ export async function generateReport(config) {
             { role: "user", content: userMessage },
           ],
           temperature: 0.5,
-          max_tokens: 2000, // Reports are longer than classifications
+          max_tokens: maxTokens,
           stream: false,
         }),
       });

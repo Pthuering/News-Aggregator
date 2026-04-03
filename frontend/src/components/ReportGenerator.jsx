@@ -90,10 +90,9 @@ function ReportGenerator({ articleIds, onClose }) {
     setGenerating(true);
     setError(null);
     setReport(null);
-    setGeneratingStatus(`Lade ${articles.length} Artikel...`);
+    setGeneratingStatus("Report wird generiert, bitte warten...");
     
     try {
-      setGeneratingStatus("Sende Anfrage an KI-API...");
       const result = await generateReport({
         articleIds: articles.map(a => a.id),
         ...config,

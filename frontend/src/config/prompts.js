@@ -142,20 +142,20 @@ export function getReportPrompt(config) {
   // Length-specific instructions
   const lengthInstructions = {
     kurz: `Länge: Kurz (Executive Summary)
-- Maximal 300 Wörter
-- Kompakte Zusammenfassung
-- Nur die wichtigsten Erkenntnisse
-- Bullet Points wo sinnvoll`,
+- Fasse dich kurz und prägnant
+- Nur die wichtigsten Erkenntnisse und Kernaussagen
+- Bullet Points wo sinnvoll
+- Knappe, auf den Punkt gebrachte Sprache`,
     mittel: `Länge: Mittel (Strukturierter Bericht)
-- Ca. 500-800 Wörter
-- Klare Struktur mit Überschriften
 - Ausgewogene Detailtiefe
-- Praktische Empfehlungen`,
+- Klare Struktur mit Überschriften
+- Wichtige Zusammenhänge erläutern
+- Praktische Empfehlungen ableiten`,
     detail: `Länge: Detail (Ausführlicher Report)
-- 1000-1500 Wörter
-- Umfassende Analyse mit Unterabschnitten
-- Detaillierte Begründungen
-- Mehrere Handlungsempfehlungen`,
+- Umfassende, tiefgehende Analyse
+- Detaillierte Begründungen und Einordnungen
+- Mehrere Handlungsempfehlungen mit Kontext
+- Zusammenhänge zwischen Artikeln gründlich herausarbeiten`,
   };
   
   return `Du bist ein Analyst in der Digitalisierungsabteilung eines deutschen Verkehrsunternehmens (ÖPNV).
