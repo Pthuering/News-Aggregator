@@ -87,16 +87,11 @@ function App() {
     setClassifyProgress({ current: 0, total: unclassifiedCount });
 
     try {
-      // Simulate progress (since classifyNew doesn't report progress yet)
-      const progressInterval = setInterval(() => {
-        setClassifyProgress((prev) => ({
-          ...prev,
-          current: Math.min(prev.current + 1, prev.total),
-        }));
-      }, 2000);
-
-      const result = await classifyNew();
-      clearInterval(progressInterval);
+      // Real progress callback from parallel workers
+      const result = await classifyNew((progress) => {
+        setClassifyProgress(progress);
+      });
+      
       setClassifyResult(result);
       await loadArticles();
     } catch (error) {

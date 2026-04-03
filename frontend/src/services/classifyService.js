@@ -1,50 +1,34 @@
 /**
  * @module classifyService
- * @purpose Multi-Lens-Klassifikation von Artikeln via NVIDIA API (mit Proxy)
+ * @purpose Multi-Lens-Klassifikation von Artikeln via NVIDIA API (Parallel)
  *
- * @reads    config/prompts.js → getClassifyPrompt()
- * @reads    config/settings.js → API_CONFIG, CLASSIFY_CONFIG
- * @reads    stores/settingsStore.js → getNvidiaApiKey()
- * @reads    stores/articleStore.js → getUnclassifiedArticles()
- * @writes   stores/articleStore.js → updateArticle() (scores, tags, summary, reasoning)
- * @calledBy App.jsx → nach feedService.fetchAllFeeds() oder separat per Button
- *
- * @dataflow
- *   getUnclassifiedArticles() → in Batches aufteilen
- *   → pro Batch: API-Call via Proxy mit System-Prompt + Artikel-Inhalte
- *   → JSON-Response parsen → Scores pro Artikel extrahieren
- *   → updateArticle() für jeden Artikel
+ * Nutzt 4 parallele Worker-Instanzen für 4x Geschwindigkeit
  *
  * @exports
  *   classifyNew(): Promise<ClassifyResult>
- *     → Klassifiziert alle noch nicht bewerteten Artikel
- *     → ClassifyResult: { classified: number, failed: number, errors: string[] }
- *
  *   classifySingle(article: RawArticle): Promise<ClassifiedArticle>
- *     → Einzelnen Artikel klassifizieren (z.B. für Nachklassifikation)
- *
- * @errors
- *   - Kein API-Key: Error werfen mit klarer Meldung
- *   - API-Fehler (Rate-Limit, Timeout): Retry 3x mit exponentiellem Backoff
- *   - JSON-Parse-Fehler: Artikel als "failed" zählen, weiter mit nächstem Batch
- *   - Einzelne Batch-Fehler stoppen NICHT den Gesamtprozess
  */
 
 import { getClassifyPrompt } from "../config/prompts.js";
-import { API_CONFIG, CLASSIFY_CONFIG, getProxyUrl } from "../config/settings.js";
+import { API_CONFIG, CLASSIFY_CONFIG } from "../config/settings.js";
 import { getNvidiaApiKey } from "../stores/settingsStore.js";
 import { getUnclassifiedArticles, updateArticle } from "../stores/articleStore.js";
 
-const PROXY_URL = getProxyUrl();
+// 4 Worker-URLs für parallele Verarbeitung
+const WORKER_URLS = [
+  "https://rss-proxy-1.philipp-thuering.workers.dev",
+  "https://rss-proxy-2.philipp-thuering.workers.dev",
+  "https://rss-proxy-3.philipp-thuering.workers.dev",
+  "https://rss-proxy-4.philipp-thuering.workers.dev",
+];
+
+const PARALLEL_WORKERS = 4;
 
 /**
- * Make API call via proxy
- * @param {string} apiKey 
- * @param {object} body 
- * @returns {Promise<Response>}
+ * Make API call via specific worker
  */
-async function callNvidiaApi(apiKey, body) {
-  const response = await fetch(`${PROXY_URL}/api/nvidia`, {
+async function callNvidiaApiViaWorker(workerUrl, apiKey, body) {
+  const response = await fetch(`${workerUrl}/api/nvidia`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -62,10 +46,26 @@ async function callNvidiaApi(apiKey, body) {
 }
 
 /**
- * Classify all unclassified articles
- * @returns {Promise<{classified: number, failed: number, errors: string[]}>}
+ * Split array into N chunks
  */
-export async function classifyNew() {
+function splitIntoChunks(array, numChunks) {
+  const chunks = [];
+  const chunkSize = Math.ceil(array.length / numChunks);
+  for (let i = 0; i < numChunks; i++) {
+    const start = i * chunkSize;
+    const end = start + chunkSize;
+    const chunk = array.slice(start, end);
+    if (chunk.length > 0) {
+      chunks.push(chunk);
+    }
+  }
+  return chunks;
+}
+
+/**
+ * Classify all unclassified articles using parallel workers
+ */
+export async function classifyNew(onProgress) {
   const apiKey = await getNvidiaApiKey();
   if (!apiKey) {
     throw new Error("NVIDIA API key not configured. Please add it in Settings.");
@@ -77,63 +77,95 @@ export async function classifyNew() {
     return { classified: 0, failed: 0, errors: [] };
   }
 
-  // Split into batches
-  const batchSize = CLASSIFY_CONFIG.batchSize;
-  const batches = [];
-  for (let i = 0; i < articles.length; i += batchSize) {
-    batches.push(articles.slice(i, i + batchSize));
-  }
+  // Split articles into chunks for parallel processing
+  const chunks = splitIntoChunks(articles, PARALLEL_WORKERS);
+  const totalArticles = articles.length;
+  let processedCount = 0;
+  
+  // Track progress per worker
+  const progressPerWorker = new Array(chunks.length).fill(0);
 
-  let classified = 0;
-  let failed = 0;
-  const errors = [];
+  const updateProgress = (workerIndex, count) => {
+    progressPerWorker[workerIndex] = count;
+    const totalProcessed = progressPerWorker.reduce((a, b) => a + b, 0);
+    if (onProgress) {
+      onProgress({ current: totalProcessed, total: totalArticles });
+    }
+  };
 
-  for (let i = 0; i < batches.length; i++) {
-    const batch = batches[i];
+  // Process chunks in parallel
+  const workerPromises = chunks.map(async (chunk, workerIndex) => {
+    const workerUrl = WORKER_URLS[workerIndex % WORKER_URLS.length];
+    const results = [];
+    
+    // Further split chunk into batches of 5
+    const batchSize = CLASSIFY_CONFIG.batchSize;
+    const batches = [];
+    for (let i = 0; i < chunk.length; i += batchSize) {
+      batches.push(chunk.slice(i, i + batchSize));
+    }
 
-    try {
-      const results = await classifyBatch(apiKey, batch);
+    for (let i = 0; i < batches.length; i++) {
+      const batch = batches[i];
       
-      // Update each article with results
-      for (let j = 0; j < batch.length; j++) {
-        const article = batch[j];
-        const result = results[j];
+      try {
+        const batchResults = await classifyBatchWithWorker(workerUrl, apiKey, batch);
+        
+        // Update each article
+        for (let j = 0; j < batch.length; j++) {
+          const article = batch[j];
+          const result = batchResults[j];
 
-        if (result) {
-          await updateArticle(article.id, {
-            scores: result.scores,
-            tags: result.tags,
-            summary_de: result.summary_de,
-            reasoning: result.reasoning,
-            classifiedAt: new Date().toISOString(),
-          });
-          classified++;
-        } else {
-          failed++;
-          errors.push(`Article ${article.id}: No result`);
+          if (result) {
+            await updateArticle(article.id, {
+              scores: result.scores,
+              tags: result.tags,
+              summary_de: result.summary_de,
+              reasoning: result.reasoning,
+              classifiedAt: new Date().toISOString(),
+            });
+            results.push({ success: true, articleId: article.id });
+          } else {
+            results.push({ success: false, articleId: article.id, error: "No result" });
+          }
         }
+        
+        updateProgress(workerIndex, (i + 1) * batch.length);
+      } catch (error) {
+        // Mark all articles in failed batch as failed
+        for (const article of batch) {
+          results.push({ success: false, articleId: article.id, error: error.message });
+        }
+        updateProgress(workerIndex, (i + 1) * batch.length);
       }
-    } catch (error) {
-      failed += batch.length;
-      errors.push(`Batch ${i + 1}/${batches.length}: ${error.message}`);
-    }
 
-    // Pause between batches to avoid rate limiting
-    if (i < batches.length - 1) {
-      await new Promise((resolve) => setTimeout(resolve, 1000));
+      // Small pause between batches to be nice to the API
+      if (i < batches.length - 1) {
+        await new Promise((resolve) => setTimeout(resolve, 500));
+      }
     }
-  }
+    
+    return results;
+  });
+
+  // Wait for all workers to complete
+  const allResults = await Promise.all(workerPromises);
+  
+  // Flatten results
+  const flatResults = allResults.flat();
+  const classified = flatResults.filter(r => r.success).length;
+  const failed = flatResults.filter(r => !r.success).length;
+  const errors = flatResults
+    .filter(r => !r.success && r.error)
+    .map(r => r.error);
 
   return { classified, failed, errors };
 }
 
 /**
- * Classify a batch of articles
- * @param {string} apiKey 
- * @param {RawArticle[]} articles 
- * @returns {Promise<Array>}
+ * Classify a batch using a specific worker
  */
-async function classifyBatch(apiKey, articles) {
+async function classifyBatchWithWorker(workerUrl, apiKey, articles) {
   const systemPrompt = getClassifyPrompt();
   const userMessage = formatArticlesForClassification(articles);
 
@@ -152,7 +184,7 @@ async function classifyBatch(apiKey, articles) {
 
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     try {
-      const data = await callNvidiaApi(apiKey, body);
+      const data = await callNvidiaApiViaWorker(workerUrl, apiKey, body);
       const content = data.choices[0]?.message?.content;
       
       if (!content) {
@@ -163,7 +195,6 @@ async function classifyBatch(apiKey, articles) {
     } catch (error) {
       lastError = error;
 
-      // Retry on rate limit or server errors
       const shouldRetry =
         error.message?.includes("429") ||
         error.message?.includes("500") ||
@@ -172,7 +203,7 @@ async function classifyBatch(apiKey, articles) {
         error.message?.includes("timeout");
 
       if (shouldRetry && attempt < maxRetries - 1) {
-        const delay = Math.pow(2, attempt + 1) * 1000; // 2s, 4s, 8s
+        const delay = Math.pow(2, attempt + 1) * 1000;
         await new Promise((resolve) => setTimeout(resolve, delay));
         continue;
       }
@@ -185,9 +216,7 @@ async function classifyBatch(apiKey, articles) {
 }
 
 /**
- * Classify a single article
- * @param {RawArticle} article - Article to classify
- * @returns {Promise<ClassifiedArticle>}
+ * Classify a single article (uses first worker)
  */
 export async function classifySingle(article) {
   const apiKey = await getNvidiaApiKey();
@@ -195,32 +224,12 @@ export async function classifySingle(article) {
     throw new Error("NVIDIA API key not configured. Please add it in Settings.");
   }
 
-  const systemPrompt = getClassifyPrompt();
-  const userMessage = formatArticlesForClassification([article]);
-
-  const body = {
-    model: API_CONFIG.model,
-    messages: [
-      { role: "system", content: systemPrompt },
-      { role: "user", content: userMessage },
-    ],
-    max_tokens: API_CONFIG.maxTokens,
-    temperature: 0.3,
-  };
-
-  const data = await callNvidiaApi(apiKey, body);
-  const content = data.choices[0]?.message?.content;
+  const results = await classifyBatchWithWorker(WORKER_URLS[0], apiKey, [article]);
   
-  if (!content) {
-    throw new Error("Empty response from API");
-  }
-
-  const results = parseClassificationResponse(content, 1);
   if (!results[0]) {
     throw new Error("Failed to classify article");
   }
 
-  // Update article in store
   await updateArticle(article.id, {
     scores: results[0].scores,
     tags: results[0].tags,
@@ -238,8 +247,6 @@ export async function classifySingle(article) {
 
 /**
  * Format articles for classification prompt
- * @param {RawArticle[]} articles 
- * @returns {string}
  */
 function formatArticlesForClassification(articles) {
   if (articles.length === 1) {
@@ -252,7 +259,6 @@ Datum: ${a.published}
 Inhalt: ${a.content.substring(0, 2000)}`;
   }
 
-  // Multiple articles
   let message = `Bewerte folgende Artikel. Gib ein JSON-Array zurück, ein Objekt pro Artikel, in derselben Reihenfolge.\n\n`;
 
   articles.forEach((a, i) => {
@@ -268,27 +274,20 @@ Inhalt: ${a.content.substring(0, 2000)}`;
 
 /**
  * Parse the classification response
- * @param {string} content - API response content
- * @param {number} expectedCount - Expected number of results
- * @returns {Array}
  */
 function parseClassificationResponse(content, expectedCount) {
   try {
-    // Remove markdown backticks if present
     let cleanContent = content.replace(/```json|```/g, "").trim();
 
     let results;
     if (cleanContent.startsWith("[")) {
-      // Array response
       results = JSON.parse(cleanContent);
     } else if (cleanContent.startsWith("{")) {
-      // Single object response
       results = [JSON.parse(cleanContent)];
     } else {
       throw new Error("Invalid JSON format");
     }
 
-    // Validate results
     return results.map((r) => ({
       scores: r.scores || { oepnv_direkt: 0, tech_transfer: 0, foerder: 0, markt: 0 },
       tags: r.tags || [],
