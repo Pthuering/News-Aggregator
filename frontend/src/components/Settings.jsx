@@ -1,9 +1,10 @@
 /**
  * @module Settings
- * @purpose UI für API-Key-Eingabe und App-Einstellungen
+ * @purpose UI für API-Key-Eingabe, App-Einstellungen und Daten-Backup
  *
  * @reads    stores/settingsStore.js → getApiKey()
  * @writes   stores/settingsStore.js → setApiKey()
+ * @reads    stores/articleStore.js → exportAll(), importAll(), clearArticles()
  * @calledBy App.jsx → über Navigation/Tab
  *
  * @exports  Settings (React Component)
@@ -11,24 +12,37 @@
 
 import { useState, useEffect } from "react";
 import { getApiKey, setApiKey } from "../stores/settingsStore.js";
+import { exportAll, importAll, clearArticles } from "../stores/articleStore.js";
 
 function Settings({ onClose }) {
   const [apiKey, setApiKeyState] = useState("");
   const [showKey, setShowKey] = useState(false);
   const [saved, setSaved] = useState(false);
   const [loading, setLoading] = useState(true);
+  
+  // Data backup states
+  const [articleCount, setArticleCount] = useState(0);
+  const [importFile, setImportFile] = useState(null);
+  const [importPreview, setImportPreview] = useState(null);
+  const [importError, setImportError] = useState(null);
+  const [importSuccess, setImportSuccess] = useState(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
-  // Load existing API key on mount
+  // Load existing API key and article count on mount
   useEffect(() => {
-    loadApiKey();
+    loadSettings();
   }, []);
 
-  const loadApiKey = async () => {
+  const loadSettings = async () => {
     try {
       const key = await getApiKey();
       setApiKeyState(key || "");
+      
+      // Get article count for export
+      const articles = await exportAll();
+      setArticleCount(articles.length);
     } catch (error) {
-      console.error("Failed to load API key:", error);
+      console.error("Failed to load settings:", error);
     } finally {
       setLoading(false);
     }
@@ -41,6 +55,96 @@ function Settings({ onClose }) {
     setTimeout(() => setSaved(false), 2000);
   };
 
+  // Export data
+  const handleExport = async () => {
+    try {
+      const articles = await exportAll();
+      const date = new Date().toISOString().split('T')[0];
+      const filename = `trend-radar-backup-${date}.json`;
+      
+      const blob = new Blob([JSON.stringify(articles, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error("Export failed:", error);
+      alert("Export fehlgeschlagen: " + error.message);
+    }
+  };
+
+  // Handle file selection for import
+  const handleFileSelect = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    
+    setImportFile(file);
+    setImportError(null);
+    setImportSuccess(null);
+    
+    // Preview the file
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const data = JSON.parse(event.target.result);
+        if (!Array.isArray(data)) {
+          setImportError("Ungültiges Dateiformat: Array erwartet");
+          setImportPreview(null);
+          return;
+        }
+        setImportPreview({
+          count: data.length,
+          sample: data.slice(0, 3).map(a => ({ title: a.title, source: a.source })),
+        });
+      } catch (err) {
+        setImportError("Ungültige JSON-Datei");
+        setImportPreview(null);
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  // Import data
+  const handleImport = async () => {
+    if (!importFile || !importPreview) return;
+    
+    try {
+      const reader = new FileReader();
+      reader.onload = async (event) => {
+        try {
+          const data = JSON.parse(event.target.result);
+          await importAll(data);
+          setImportSuccess(`${data.length} Artikel erfolgreich importiert`);
+          setImportFile(null);
+          setImportPreview(null);
+          setArticleCount(data.length);
+          setTimeout(() => setImportSuccess(null), 3000);
+        } catch (err) {
+          setImportError("Import fehlgeschlagen: " + err.message);
+        }
+      };
+      reader.readAsText(importFile);
+    } catch (error) {
+      setImportError("Import fehlgeschlagen: " + error.message);
+    }
+  };
+
+  // Clear all data
+  const handleDeleteAll = async () => {
+    try {
+      await clearArticles();
+      setArticleCount(0);
+      setShowDeleteConfirm(false);
+      alert("Alle Daten wurden gelöscht");
+    } catch (error) {
+      alert("Löschen fehlgeschlagen: " + error.message);
+    }
+  };
+
   if (loading) {
     return (
       <div className="bg-white rounded-lg shadow-lg p-6">
@@ -50,7 +154,7 @@ function Settings({ onClose }) {
   }
 
   return (
-    <div className="bg-white rounded-lg shadow-lg p-6">
+    <div className="bg-white rounded-lg shadow-lg p-6 max-h-[80vh] overflow-y-auto">
       <div className="flex items-center justify-between mb-6">
         <h2 className="text-2xl font-bold text-gray-900">Einstellungen</h2>
         <button
@@ -114,6 +218,116 @@ function Settings({ onClose }) {
           </a>{" "}
           erstellen.
         </p>
+      </section>
+
+      {/* Data Backup Section */}
+      <section className="border-t border-gray-200 pt-6 mb-8">
+        <h3 className="text-lg font-semibold text-gray-800 mb-3">
+          Daten-Backup
+        </h3>
+        <p className="text-sm text-gray-600 mb-4">
+          Aktuell sind {articleCount} Artikel gespeichert.
+        </p>
+
+        {/* Export */}
+        <div className="mb-6">
+          <button
+            onClick={handleExport}
+            disabled={articleCount === 0}
+            className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+          >
+            Daten exportieren (JSON)
+          </button>
+          <p className="text-xs text-gray-500 mt-2">
+            Erstellt eine JSON-Datei mit allen Artikeln als Backup.
+          </p>
+        </div>
+
+        {/* Import */}
+        <div className="mb-6 p-4 bg-gray-50 rounded-lg">
+          <h4 className="font-medium text-gray-700 mb-2">Import</h4>
+          
+          <input
+            type="file"
+            accept=".json"
+            onChange={handleFileSelect}
+            className="block w-full text-sm text-gray-500
+              file:mr-4 file:py-2 file:px-4
+              file:rounded-md file:border-0
+              file:text-sm file:font-medium
+              file:bg-blue-50 file:text-blue-700
+              hover:file:bg-blue-100
+              cursor-pointer"
+          />
+
+          {importPreview && (
+            <div className="mt-3 p-3 bg-white rounded border border-gray-200">
+              <p className="text-sm text-gray-700">
+                <strong>{importPreview.count} Artikel gefunden</strong>
+              </p>
+              <ul className="mt-2 text-xs text-gray-500 space-y-1">
+                {importPreview.sample.map((article, idx) => (
+                  <li key={idx} className="truncate">
+                    • {article.title} ({article.source})
+                  </li>
+                ))}
+                {importPreview.count > 3 && (
+                  <li>... und {importPreview.count - 3} weitere</li>
+                )}
+              </ul>
+              <p className="mt-2 text-xs text-red-600">
+                ⚠️ Bestehende Daten werden überschrieben!
+              </p>
+              <button
+                onClick={handleImport}
+                className="mt-2 px-3 py-1.5 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
+              >
+                Importieren
+              </button>
+            </div>
+          )}
+
+          {importError && (
+            <div className="mt-2 text-sm text-red-600">{importError}</div>
+          )}
+
+          {importSuccess && (
+            <div className="mt-2 text-sm text-green-600">{importSuccess}</div>
+          )}
+        </div>
+
+        {/* Delete All */}
+        <div className="pt-4 border-t border-gray-200">
+          {!showDeleteConfirm ? (
+            <button
+              onClick={() => setShowDeleteConfirm(true)}
+              className="px-4 py-2 bg-red-100 text-red-700 rounded-md hover:bg-red-200 transition-colors"
+            >
+              Alle Daten löschen
+            </button>
+          ) : (
+            <div className="p-4 bg-red-50 rounded-lg border border-red-200">
+              <p className="text-sm text-red-700 mb-3">
+                <strong>Warnung:</strong> Wirklich alle {articleCount} Artikel löschen?
+                Dies kann nicht rückgängig gemacht werden!
+              </p>
+              <div className="flex gap-2">
+                <button
+                  onClick={handleDeleteAll}
+                  className="px-3 py-1.5 text-sm bg-red-600 text-white rounded hover:bg-red-700 transition-colors"
+                >
+                  Ja, alle löschen
+                </button>
+                <button
+                  onClick={() => setShowDeleteConfirm(false)}
+                  className="px-3 py-1.5 text-sm bg-gray-200 text-gray-700 rounded hover:bg-gray-300 transition-colors"
+                >
+                  Abbrechen
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
       </section>
 
       {/* Info Section */}

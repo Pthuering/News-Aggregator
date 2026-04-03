@@ -13,6 +13,7 @@ import { getNvidiaApiKey } from "./stores/settingsStore.js";
 import Settings from "./components/Settings.jsx";
 import FilterBar, { INITIAL_FILTERS } from "./components/FilterBar.jsx";
 import ArticleDetail from "./components/ArticleDetail.jsx";
+import ReportGenerator from "./components/ReportGenerator.jsx";
 
 function App() {
   const [articles, setArticles] = useState([]);
@@ -27,6 +28,8 @@ function App() {
   const [initialized, setInitialized] = useState(false);
   const [filters, setFilters] = useState(INITIAL_FILTERS);
   const [selectedArticle, setSelectedArticle] = useState(null);
+  const [selectedArticleIds, setSelectedArticleIds] = useState([]);
+  const [showReportGenerator, setShowReportGenerator] = useState(false);
 
   // Initialize DB and check API key on mount
   useEffect(() => {
@@ -264,6 +267,27 @@ function App() {
     setSelectedArticle(updated);
   };
 
+  // Toggle article selection for report
+  const handleToggleSelection = (e, articleId) => {
+    e.stopPropagation();
+    setSelectedArticleIds(prev => 
+      prev.includes(articleId)
+        ? prev.filter(id => id !== articleId)
+        : [...prev, articleId]
+    );
+  };
+
+  // Clear selection when opening report generator
+  const handleOpenReportGenerator = () => {
+    setShowReportGenerator(true);
+  };
+
+  // Close report generator and optionally clear selection
+  const handleCloseReportGenerator = () => {
+    setShowReportGenerator(false);
+    setSelectedArticleIds([]);
+  };
+
   if (!initialized) {
     return (
       <div className="min-h-screen bg-gray-100 flex items-center justify-center">
@@ -472,10 +496,19 @@ function App() {
                   }`}
                 >
                   <div className="block">
-                    {/* Title + Bookmark */}
+                    {/* Title + Selection + Bookmark */}
                     <div className="flex items-start justify-between gap-2">
-                      <div className="text-sm font-medium text-blue-600 hover:text-blue-800 flex-1">
-                        {article.title}
+                      <div className="flex items-start gap-2 flex-1">
+                        <input
+                          type="checkbox"
+                          checked={selectedArticleIds.includes(article.id)}
+                          onChange={(e) => handleToggleSelection(e, article.id)}
+                          onClick={(e) => e.stopPropagation()}
+                          className="mt-1 w-4 h-4 text-blue-600 rounded focus:ring-blue-500 cursor-pointer"
+                        />
+                        <div className="text-sm font-medium text-blue-600 hover:text-blue-800">
+                          {article.title}
+                        </div>
                       </div>
                       <button
                         onClick={(e) => handleBookmarkToggle(e, article)}
@@ -560,12 +593,27 @@ function App() {
                         </span>
                       </div>
                     )}
-                  </a>
+                  </div>
                 </li>
               ))}
             </ul>
           )}
         </div>
+
+        {/* Floating Report Button */}
+        {selectedArticleIds.length > 0 && (
+          <div className="fixed bottom-6 left-1/2 transform -translate-x-1/2 z-40">
+            <button
+              onClick={handleOpenReportGenerator}
+              className="px-6 py-3 bg-purple-600 text-white rounded-full shadow-lg hover:bg-purple-700 transition-colors flex items-center gap-2"
+            >
+              <span>Report erstellen</span>
+              <span className="bg-purple-800 px-2 py-0.5 rounded-full text-sm">
+                {selectedArticleIds.length}
+              </span>
+            </button>
+          </div>
+        )}
       </main>
 
       {/* Settings Modal */}
@@ -591,6 +639,14 @@ function App() {
             <Settings onClose={() => { setShowSettings(false); checkApiKey(); }} />
           </div>
         </div>
+      )}
+
+      {/* Report Generator Modal */}
+      {showReportGenerator && (
+        <ReportGenerator
+          articleIds={selectedArticleIds}
+          onClose={handleCloseReportGenerator}
+        />
       )}
     </div>
   );
