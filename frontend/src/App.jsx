@@ -409,6 +409,15 @@ function App() {
                 ? `Klassifiziere... (${classifyProgress.current}/${classifyProgress.total})`
                 : `Klassifizieren (${unclassifiedCount})`}
             </button>
+
+            <button
+              onClick={handleOpenReportGenerator}
+              disabled={selectedArticleIds.length === 0}
+              title={selectedArticleIds.length === 0 ? "Erst Artikel per Checkbox auswählen" : ""}
+              className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:bg-gray-300 disabled:text-gray-500 disabled:cursor-not-allowed transition-colors"
+            >
+              Report erstellen{selectedArticleIds.length > 0 ? ` (${selectedArticleIds.length})` : ""}
+            </button>
           </div>
 
           {/* FilterBar */}
@@ -600,20 +609,7 @@ function App() {
           )}
         </div>
 
-        {/* Floating Report Button */}
-        {selectedArticleIds.length > 0 && (
-          <div className="fixed bottom-6 left-1/2 transform -translate-x-1/2 z-40">
-            <button
-              onClick={handleOpenReportGenerator}
-              className="px-6 py-3 bg-purple-600 text-white rounded-full shadow-lg hover:bg-purple-700 transition-colors flex items-center gap-2"
-            >
-              <span>Report erstellen</span>
-              <span className="bg-purple-800 px-2 py-0.5 rounded-full text-sm">
-                {selectedArticleIds.length}
-              </span>
-            </button>
-          </div>
-        )}
+
       </main>
 
       {/* Settings Modal */}
