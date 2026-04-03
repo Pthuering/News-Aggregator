@@ -11,7 +11,6 @@ import { fetchAllFeeds } from "./services/feedService.js";
 import { classifyNew } from "./services/classifyService.js";
 import { getNvidiaApiKey } from "./stores/settingsStore.js";
 import Settings from "./components/Settings.jsx";
-import FilterBar, { INITIAL_FILTERS } from "./components/FilterBar.jsx";
 
 function App() {
   const [articles, setArticles] = useState([]);
@@ -24,7 +23,11 @@ function App() {
   const [classifyResult, setClassifyResult] = useState(null);
   const [showSettings, setShowSettings] = useState(false);
   const [initialized, setInitialized] = useState(false);
-  const [filters, setFilters] = useState(INITIAL_FILTERS);
+  // Simple filters
+  const [searchText, setSearchText] = useState("");
+  const [selectedCategory, setSelectedCategory] = useState("all");
+  const [minScore, setMinScore] = useState(0);
+  const [showClassifiedOnly, setShowClassifiedOnly] = useState(false);
 
   // Initialize DB and check API key on mount
   useEffect(() => {
@@ -127,116 +130,51 @@ function App() {
     return "bg-green-100 text-green-800";
   };
 
-  // Get all unique tags from classified articles
-  const availableTags = useMemo(() => {
-    const tagSet = new Set();
-    articles.forEach((a) => {
-      if (a.tags) {
-        a.tags.forEach((tag) => tagSet.add(tag));
-      }
-    });
-    return Array.from(tagSet).sort();
+  // Get unique categories
+  const categories = useMemo(() => {
+    const cats = new Set(articles.map((a) => a.sourceCategory));
+    return ["all", ...Array.from(cats)];
   }, [articles]);
 
-  // Filter articles based on filter state
+  // Simple filter logic
   const filteredArticles = useMemo(() => {
     let result = [...articles];
 
-    // Text search (title, content, summary, tags)
-    if (filters.search) {
-      const lowerSearch = filters.search.toLowerCase();
+    // Text search
+    if (searchText) {
+      const lower = searchText.toLowerCase();
       result = result.filter(
         (a) =>
-          a.title.toLowerCase().includes(lowerSearch) ||
-          a.content.toLowerCase().includes(lowerSearch) ||
-          (a.summary_de && a.summary_de.toLowerCase().includes(lowerSearch)) ||
-          (a.tags && a.tags.some((t) => t.toLowerCase().includes(lowerSearch)))
+          a.title.toLowerCase().includes(lower) ||
+          a.content.toLowerCase().includes(lower) ||
+          (a.summary_de && a.summary_de.toLowerCase().includes(lower))
       );
     }
 
     // Category filter
-    if (filters.category && filters.category !== "all") {
-      result = result.filter((a) => a.sourceCategory === filters.category);
+    if (selectedCategory !== "all") {
+      result = result.filter((a) => a.sourceCategory === selectedCategory);
     }
 
     // Classified only
-    if (filters.classifiedOnly) {
+    if (showClassifiedOnly) {
       result = result.filter((a) => a.classifiedAt && a.scores);
     }
 
-    // Score filters
-    if (filters.scores) {
-      Object.entries(filters.scores).forEach(([lens, range]) => {
-        if (range.min > 0 || range.max < 10) {
-          result = result.filter(
-            (a) =>
-              a.scores &&
-              a.scores[lens] >= range.min &&
-              a.scores[lens] <= range.max
-          );
-        }
-      });
+    // Min score filter (any lens)
+    if (minScore > 0) {
+      result = result.filter(
+        (a) =>
+          a.scores &&
+          Object.values(a.scores).some((s) => s >= minScore)
+      );
     }
 
-    // Tags filter
-    if (filters.tags && filters.tags.length > 0) {
-      if (filters.tagMatch === "all") {
-        // Must have ALL selected tags
-        result = result.filter(
-          (a) =>
-            a.tags && filters.tags.every((tag) => a.tags.includes(tag))
-        );
-      } else {
-        // Must have ANY of the selected tags
-        result = result.filter(
-          (a) =>
-            a.tags && filters.tags.some((tag) => a.tags.includes(tag))
-        );
-      }
-    }
-
-    // Date range
-    if (filters.dateFrom) {
-      const fromDate = new Date(filters.dateFrom);
-      result = result.filter((a) => new Date(a.published) >= fromDate);
-    }
-    if (filters.dateTo) {
-      const toDate = new Date(filters.dateTo);
-      toDate.setHours(23, 59, 59); // End of day
-      result = result.filter((a) => new Date(a.published) <= toDate);
-    }
-
-    // Sorting
-    result.sort((a, b) => {
-      switch (filters.sortBy) {
-        case "newest":
-          return new Date(b.published) - new Date(a.published);
-        case "oldest":
-          return new Date(a.published) - new Date(b.published);
-        case "relevance":
-          // Sum of all scores as relevance
-          const scoreA = a.scores
-            ? Object.values(a.scores).reduce((s, v) => s + v, 0)
-            : 0;
-          const scoreB = b.scores
-            ? Object.values(b.scores).reduce((s, v) => s + v, 0)
-            : 0;
-          return scoreB - scoreA;
-        case "score_oepnv":
-          return (b.scores?.oepnv_direkt || 0) - (a.scores?.oepnv_direkt || 0);
-        case "score_tech":
-          return (b.scores?.tech_transfer || 0) - (a.scores?.tech_transfer || 0);
-        case "score_foerder":
-          return (b.scores?.foerder || 0) - (a.scores?.foerder || 0);
-        case "score_markt":
-          return (b.scores?.markt || 0) - (a.scores?.markt || 0);
-        default:
-          return new Date(b.published) - new Date(a.published);
-      }
-    });
+    // Sort by date
+    result.sort((a, b) => new Date(b.published) - new Date(a.published));
 
     return result;
-  }, [articles, filters]);
+  }, [articles, searchText, selectedCategory, showClassifiedOnly, minScore]);
 
   if (!initialized) {
     return (
@@ -297,12 +235,45 @@ function App() {
             </button>
           </div>
 
-          {/* Filter Bar - direkt unter den Buttons */}
-          <FilterBar
-            filters={filters}
-            onFilterChange={setFilters}
-            availableTags={availableTags}
-          />
+          {/* Simple Filters */}
+          <div style={{ display: "flex", gap: "10px", flexWrap: "wrap", padding: "15px", background: "#f5f5f5", borderRadius: "8px" }}>
+            <input
+              type="text"
+              placeholder="Suchen..."
+              value={searchText}
+              onChange={(e) => setSearchText(e.target.value)}
+              style={{ padding: "8px 12px", border: "1px solid #ccc", borderRadius: "4px", flex: "1", minWidth: "200px" }}
+            />
+            <select
+              value={selectedCategory}
+              onChange={(e) => setSelectedCategory(e.target.value)}
+              style={{ padding: "8px 12px", border: "1px solid #ccc", borderRadius: "4px" }}
+            >
+              <option value="all">Alle Kategorien</option>
+              {categories.filter(c => c !== "all").map(c => (
+                <option key={c} value={c}>{c}</option>
+              ))}
+            </select>
+            <label style={{ display: "flex", alignItems: "center", gap: "5px", fontSize: "14px" }}>
+              <input
+                type="checkbox"
+                checked={showClassifiedOnly}
+                onChange={(e) => setShowClassifiedOnly(e.target.checked)}
+              />
+              Nur klassifiziert
+            </label>
+            <label style={{ display: "flex", alignItems: "center", gap: "5px", fontSize: "14px" }}>
+              Min Score:
+              <input
+                type="number"
+                min="0"
+                max="10"
+                value={minScore}
+                onChange={(e) => setMinScore(parseInt(e.target.value) || 0)}
+                style={{ width: "50px", padding: "4px" }}
+              />
+            </label>
+          </div>
         </div>
 
         {/* Feed result summary */}
