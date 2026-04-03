@@ -341,22 +341,27 @@ function App() {
       {/* Settings Modal */}
       {showSettings && (
         <div 
-          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4"
-          style={{ zIndex: 9999, position: 'fixed', top: 0, left: 0, right: 0, bottom: 0 }}
+          className="fixed inset-0 flex items-center justify-center p-4"
+          style={{ 
+            zIndex: 9999, 
+            position: 'fixed', 
+            top: 0, 
+            left: 0, 
+            right: 0, 
+            bottom: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.7)'
+          }}
+          onClick={() => setShowSettings(false)}
         >
           <div 
-            className="bg-white rounded-lg shadow-xl max-w-lg w-full"
-            style={{ maxHeight: '90vh', overflow: 'auto' }}
+            className="bg-white rounded-lg shadow-2xl w-full"
+            style={{ maxWidth: '500px', maxHeight: '90vh', overflow: 'auto' }}
+            onClick={(e) => e.stopPropagation()}
           >
             <Settings onClose={() => { setShowSettings(false); checkApiKey(); }} />
           </div>
         </div>
       )}
-      
-      {/* Debug - Status anzeigen */}
-      <div style={{ position: 'fixed', bottom: 10, right: 10, background: 'yellow', padding: '5px', zIndex: 10000 }}>
-        showSettings: {showSettings ? 'true' : 'false'}
-      </div>
     </div>
   );
 }

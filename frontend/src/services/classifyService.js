@@ -1,6 +1,6 @@
 /**
  * @module classifyService
- * @purpose Multi-Lens-Klassifikation von Artikeln via NVIDIA API
+ * @purpose Multi-Lens-Klassifikation von Artikeln via NVIDIA API (mit Proxy)
  *
  * @reads    config/prompts.js → getClassifyPrompt()
  * @reads    config/settings.js → API_CONFIG, CLASSIFY_CONFIG
@@ -11,7 +11,7 @@
  *
  * @dataflow
  *   getUnclassifiedArticles() → in Batches aufteilen
- *   → pro Batch: API-Call mit System-Prompt + Artikel-Inhalte
+ *   → pro Batch: API-Call via Proxy mit System-Prompt + Artikel-Inhalte
  *   → JSON-Response parsen → Scores pro Artikel extrahieren
  *   → updateArticle() für jeden Artikel
  *
@@ -30,23 +30,35 @@
  *   - Einzelne Batch-Fehler stoppen NICHT den Gesamtprozess
  */
 
-import OpenAI from "openai";
 import { getClassifyPrompt } from "../config/prompts.js";
-import { API_CONFIG, CLASSIFY_CONFIG } from "../config/settings.js";
+import { API_CONFIG, CLASSIFY_CONFIG, getProxyUrl } from "../config/settings.js";
 import { getNvidiaApiKey } from "../stores/settingsStore.js";
 import { getUnclassifiedArticles, updateArticle } from "../stores/articleStore.js";
 
+const PROXY_URL = getProxyUrl();
+
 /**
- * Get OpenAI client configured for NVIDIA API
+ * Make API call via proxy
  * @param {string} apiKey 
- * @returns {OpenAI}
+ * @param {object} body 
+ * @returns {Promise<Response>}
  */
-function getClient(apiKey) {
-  return new OpenAI({
-    apiKey: apiKey,
-    baseURL: "https://integrate.api.nvidia.com/v1",
-    dangerouslyAllowBrowser: true,
+async function callNvidiaApi(apiKey, body) {
+  const response = await fetch(`${PROXY_URL}/api/nvidia`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify(body),
   });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`API Error ${response.status}: ${errorText}`);
+  }
+
+  return response.json();
 }
 
 /**
@@ -59,7 +71,6 @@ export async function classifyNew() {
     throw new Error("NVIDIA API key not configured. Please add it in Settings.");
   }
 
-  const client = getClient(apiKey);
   const articles = await getUnclassifiedArticles();
 
   if (articles.length === 0) {
@@ -81,7 +92,7 @@ export async function classifyNew() {
     const batch = batches[i];
 
     try {
-      const results = await classifyBatch(client, batch);
+      const results = await classifyBatch(apiKey, batch);
       
       // Update each article with results
       for (let j = 0; j < batch.length; j++) {
@@ -118,30 +129,32 @@ export async function classifyNew() {
 
 /**
  * Classify a batch of articles
- * @param {OpenAI} client 
+ * @param {string} apiKey 
  * @param {RawArticle[]} articles 
  * @returns {Promise<Array>}
  */
-async function classifyBatch(client, articles) {
+async function classifyBatch(apiKey, articles) {
   const systemPrompt = getClassifyPrompt();
   const userMessage = formatArticlesForClassification(articles);
+
+  const body = {
+    model: API_CONFIG.model,
+    messages: [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: userMessage },
+    ],
+    max_tokens: API_CONFIG.maxTokens * articles.length,
+    temperature: 0.3,
+  };
 
   const maxRetries = 3;
   let lastError;
 
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     try {
-      const completion = await client.chat.completions.create({
-        model: API_CONFIG.model,
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: userMessage },
-        ],
-        max_tokens: API_CONFIG.maxTokens * articles.length,
-        temperature: 0.3,
-      });
-
-      const content = completion.choices[0]?.message?.content;
+      const data = await callNvidiaApi(apiKey, body);
+      const content = data.choices[0]?.message?.content;
+      
       if (!content) {
         throw new Error("Empty response from API");
       }
@@ -152,9 +165,9 @@ async function classifyBatch(client, articles) {
 
       // Retry on rate limit or server errors
       const shouldRetry =
-        error.status === 429 ||
-        error.status === 500 ||
-        error.status === 529 ||
+        error.message?.includes("429") ||
+        error.message?.includes("500") ||
+        error.message?.includes("529") ||
         error.message?.includes("network") ||
         error.message?.includes("timeout");
 
@@ -182,11 +195,10 @@ export async function classifySingle(article) {
     throw new Error("NVIDIA API key not configured. Please add it in Settings.");
   }
 
-  const client = getClient(apiKey);
   const systemPrompt = getClassifyPrompt();
   const userMessage = formatArticlesForClassification([article]);
 
-  const completion = await client.chat.completions.create({
+  const body = {
     model: API_CONFIG.model,
     messages: [
       { role: "system", content: systemPrompt },
@@ -194,9 +206,11 @@ export async function classifySingle(article) {
     ],
     max_tokens: API_CONFIG.maxTokens,
     temperature: 0.3,
-  });
+  };
 
-  const content = completion.choices[0]?.message?.content;
+  const data = await callNvidiaApi(apiKey, body);
+  const content = data.choices[0]?.message?.content;
+  
   if (!content) {
     throw new Error("Empty response from API");
   }
