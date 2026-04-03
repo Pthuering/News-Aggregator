@@ -236,7 +236,7 @@ function App() {
           </div>
 
           {/* Simple Filters */}
-          <div style={{ display: "flex", gap: "10px", flexWrap: "wrap", padding: "15px", background: "#f5f5f5", borderRadius: "8px" }}>
+          <div style={{ display: "flex", gap: "10px", flexWrap: "wrap", padding: "15px", background: "#ff0000", borderRadius: "8px", border: "5px solid black" }}>
             <input
               type="text"
               placeholder="Suchen..."
