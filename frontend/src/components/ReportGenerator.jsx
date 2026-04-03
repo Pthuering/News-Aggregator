@@ -52,6 +52,7 @@ function ReportGenerator({ articleIds, onClose }) {
   
   // Generation state
   const [generating, setGenerating] = useState(false);
+  const [generatingStatus, setGeneratingStatus] = useState("");
   const [report, setReport] = useState(null);
   const [error, setError] = useState(null);
   const [copied, setCopied] = useState(false);
@@ -89,17 +90,21 @@ function ReportGenerator({ articleIds, onClose }) {
     setGenerating(true);
     setError(null);
     setReport(null);
+    setGeneratingStatus(`Lade ${articles.length} Artikel...`);
     
     try {
+      setGeneratingStatus("Sende Anfrage an KI-API...");
       const result = await generateReport({
         articleIds: articles.map(a => a.id),
         ...config,
       });
+      setGeneratingStatus("Report fertig!");
       setReport(result);
     } catch (err) {
       setError(err.message || "Report-Generierung fehlgeschlagen");
     } finally {
       setGenerating(false);
+      setGeneratingStatus("");
     }
   };
 
@@ -155,12 +160,12 @@ function ReportGenerator({ articleIds, onClose }) {
   return (
     <div
       className="fixed flex items-center justify-center p-4"
-      style={{ zIndex: 9999, top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.7)' }}
+      style={{ zIndex: 9999, top: 0, left: 0, right: 0, bottom: 0, backgroundColor: '#f3f4f6' }}
       onClick={onClose}
     >
       <div
         className="bg-white rounded-lg shadow-xl w-full flex flex-col"
-        style={{ maxWidth: '900px', maxHeight: '90vh', overflow: 'hidden' }}
+        style={{ maxWidth: '900px', maxHeight: '90vh', overflow: 'auto' }}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
@@ -265,11 +270,12 @@ function ReportGenerator({ articleIds, onClose }) {
                       <button
                         key={option.value}
                         onClick={() => setConfig(c => ({ ...c, audience: option.value }))}
-                        className={`px-3 py-1.5 text-sm rounded-md transition-colors ${
-                          config.audience === option.value
-                            ? "bg-blue-600 text-white"
-                            : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-                        }`}
+                        style={{
+                          padding: '6px 12px', fontSize: '14px', borderRadius: '6px', border: 'none', cursor: 'pointer',
+                          backgroundColor: config.audience === option.value ? '#2563eb' : '#e5e7eb',
+                          color: config.audience === option.value ? '#fff' : '#374151',
+                          fontWeight: config.audience === option.value ? 600 : 400,
+                        }}
                       >
                         {option.label}
                       </button>
@@ -287,11 +293,12 @@ function ReportGenerator({ articleIds, onClose }) {
                       <button
                         key={option.value}
                         onClick={() => setConfig(c => ({ ...c, focus: option.value }))}
-                        className={`px-3 py-1.5 text-sm rounded-md transition-colors ${
-                          config.focus === option.value
-                            ? "bg-blue-600 text-white"
-                            : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-                        }`}
+                        style={{
+                          padding: '6px 12px', fontSize: '14px', borderRadius: '6px', border: 'none', cursor: 'pointer',
+                          backgroundColor: config.focus === option.value ? '#2563eb' : '#e5e7eb',
+                          color: config.focus === option.value ? '#fff' : '#374151',
+                          fontWeight: config.focus === option.value ? 600 : 400,
+                        }}
                       >
                         {option.label}
                       </button>
@@ -309,11 +316,12 @@ function ReportGenerator({ articleIds, onClose }) {
                       <button
                         key={option.value}
                         onClick={() => setConfig(c => ({ ...c, length: option.value }))}
-                        className={`px-3 py-1.5 text-sm rounded-md transition-colors ${
-                          config.length === option.value
-                            ? "bg-blue-600 text-white"
-                            : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-                        }`}
+                        style={{
+                          padding: '6px 12px', fontSize: '14px', borderRadius: '6px', border: 'none', cursor: 'pointer',
+                          backgroundColor: config.length === option.value ? '#2563eb' : '#e5e7eb',
+                          color: config.length === option.value ? '#fff' : '#374151',
+                          fontWeight: config.length === option.value ? 600 : 400,
+                        }}
                       >
                         {option.label}
                       </button>
@@ -337,13 +345,18 @@ function ReportGenerator({ articleIds, onClose }) {
               <button
                 onClick={handleGenerate}
                 disabled={generating || articles.length === 0 || !hasApiKey}
-                className="w-full px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+                style={{
+                  width: '100%', padding: '10px 16px', borderRadius: '6px', border: 'none', cursor: generating || articles.length === 0 || !hasApiKey ? 'not-allowed' : 'pointer',
+                  backgroundColor: generating || articles.length === 0 || !hasApiKey ? '#d1d5db' : '#7c3aed',
+                  color: generating || articles.length === 0 || !hasApiKey ? '#6b7280' : '#fff',
+                  fontSize: '14px', fontWeight: 600,
+                }}
               >
                 {generating 
-                  ? "Report wird generiert..." 
+                  ? generatingStatus || "Report wird generiert..."
                   : !hasApiKey 
                     ? "API-Key in Einstellungen hinterlegen" 
-                    : "Report generieren"
+                    : `Report generieren (${articles.length} Artikel)`
                 }
               </button>
             </div>
