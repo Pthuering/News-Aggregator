@@ -9,6 +9,7 @@ import { initDB, getAllArticles, getUnclassifiedArticles, updateArticle } from "
 import { fetchAllFeeds } from "./services/feedService.js";
 import { classifyNew } from "./services/classifyService.js";
 import { matchNewArticles } from "./services/matchService.js";
+import { clusterArticles } from "./services/clusterService.js";
 import { getNvidiaApiKey } from "./stores/settingsStore.js";
 import { getProjects } from "./stores/projectStore.js";
 import Settings from "./components/Settings.jsx";
@@ -37,6 +38,8 @@ function App() {
   const [matchLoading, setMatchLoading] = useState(false);
   const [matchProgress, setMatchProgress] = useState({ current: 0, total: 0, skipped: 0 });
   const [matchResult, setMatchResult] = useState(null);
+  const [clusterResult, setClusterResult] = useState(null);
+  const [clusterLoading, setClusterLoading] = useState(false);
   const [projectCount, setProjectCount] = useState(0);
   const [unmatchedCount, setUnmatchedCount] = useState(0);
 
@@ -160,13 +163,29 @@ function App() {
     }
   };
 
-  // Handle full pipeline: feeds → classify → match
+  // Handle clustering
+  const handleCluster = async () => {
+    setClusterLoading(true);
+    setClusterResult(null);
+    try {
+      const result = await clusterArticles();
+      setClusterResult(result);
+      await loadArticles();
+    } catch (error) {
+      setClusterResult({ clusters: [], unclustered: 0, error: error.message });
+    } finally {
+      setClusterLoading(false);
+    }
+  };
+
+  // Handle full pipeline: feeds → classify → match → cluster
   const handleFullRun = async () => {
     // Step 1: Feeds
     setLoading(true);
     setResult(null);
     setClassifyResult(null);
     setMatchResult(null);
+    setClusterResult(null);
 
     try {
       const feedResult = await fetchAllFeeds();
@@ -212,6 +231,15 @@ function App() {
       setMatchLoading(false);
       setMatchProgress({ current: 0, total: 0, skipped: 0 });
     }
+
+    // Step 4: Cluster (always runs after classification, no API key needed)
+    setClusterLoading(true);
+    try {
+      const clResult = await clusterArticles();
+      setClusterResult(clResult);
+      await loadArticles();
+    } catch (_) { /* clustering failure is non-critical */ }
+    setClusterLoading(false);
   };
 
   // Format date for display
@@ -579,6 +607,16 @@ function App() {
             </button>
 
             <button
+              onClick={handleCluster}
+              disabled={clusterLoading || articles.filter(a => a.tags).length === 0}
+              title={articles.filter(a => a.tags).length === 0 ? "Erst Artikel klassifizieren" : "Ähnliche Artikel gruppieren"}
+              style={clusterLoading ? {} : { backgroundColor: '#d97706' }}
+              className="px-4 py-2 text-white rounded-md hover:opacity-90 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+            >
+              {clusterLoading ? "Clustere..." : "Clustern"}
+            </button>
+
+            <button
               onClick={handleOpenReportGenerator}
               disabled={selectedArticleIds.length === 0}
               title={selectedArticleIds.length === 0 ? "Erst Artikel per Checkbox auswählen" : ""}
@@ -589,12 +627,12 @@ function App() {
 
             <button
               onClick={handleFullRun}
-              disabled={loading || classifyLoading || matchLoading}
-              title="Feeds aktualisieren → Klassifizieren → Synergien prüfen"
-              style={loading || classifyLoading || matchLoading ? {} : { backgroundColor: '#7c3aed' }}
+              disabled={loading || classifyLoading || matchLoading || clusterLoading}
+              title="Feeds aktualisieren → Klassifizieren → Synergien prüfen → Clustern"
+              style={loading || classifyLoading || matchLoading || clusterLoading ? {} : { backgroundColor: '#7c3aed' }}
               className="px-4 py-2 text-white rounded-md hover:opacity-90 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
             >
-              {loading || classifyLoading || matchLoading ? "Läuft..." : "Komplett-Durchlauf"}
+              {loading || classifyLoading || matchLoading || clusterLoading ? "Läuft..." : "Komplett-Durchlauf"}
             </button>
           </div>
 
@@ -660,6 +698,31 @@ function App() {
                 <>, <span className="font-medium text-red-600">{matchResult.failed} fehlgeschlagen</span></>
               )}
             </div>
+          </div>
+        )}
+
+        {/* Cluster result */}
+        {clusterResult && (
+          <div className="mb-4 p-4 bg-white rounded-lg shadow" style={{ borderLeft: '4px solid #d97706' }}>
+            <div className="text-sm text-gray-700">
+              <span className="font-medium">{clusterResult.clusters.length}</span> Cluster erkannt,{" "}
+              <span className="font-medium">{clusterResult.unclustered}</span> nicht zugeordnet
+              {clusterResult.error && (
+                <span className="ml-2 text-red-600">Fehler: {clusterResult.error}</span>
+              )}
+            </div>
+            {clusterResult.clusters.length > 0 && (
+              <div className="mt-2 flex flex-wrap gap-2">
+                {clusterResult.clusters.slice(0, 8).map(c => (
+                  <span key={c.id} className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-800">
+                    {c.name} ({c.articleCount})
+                  </span>
+                ))}
+                {clusterResult.clusters.length > 8 && (
+                  <span className="text-xs text-gray-500">+{clusterResult.clusters.length - 8} weitere</span>
+                )}
+              </div>
+            )}
           </div>
         )}
 

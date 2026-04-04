@@ -194,16 +194,28 @@ export async function clusterArticles() {
     }
   }
   
-  // Format result
-  const resultClusters = Array.from(clusters.values()).map(c => ({
-    id: c.id,
-    name: generateClusterName(c.tags, c.articles.length),
-    articleCount: c.articles.length,
-    tags: Array.from(c.tags),
-    articles: c.articles.map(a => a.id),
-  }));
+  // Format result – only clusters with ≥ 2 articles count
+  const resultClusters = Array.from(clusters.values())
+    .filter(c => c.articles.length >= 2)
+    .map(c => ({
+      id: c.id,
+      name: generateClusterName(c.tags, c.articles.length),
+      articleCount: c.articles.length,
+      tags: Array.from(c.tags),
+      articles: c.articles.map(a => a.id),
+    }));
   
-  const unclustered = classifiedArticles.length - assigned.size;
+  // Clear clusterId for single-article "clusters"
+  for (const c of clusters.values()) {
+    if (c.articles.length < 2) {
+      for (const a of c.articles) {
+        await updateArticle(a.id, { clusterId: null });
+      }
+    }
+  }
+  
+  const clusteredCount = resultClusters.reduce((s, c) => s + c.articleCount, 0);
+  const unclustered = classifiedArticles.length - clusteredCount;
   
   return { clusters: resultClusters, unclustered };
 }
@@ -244,40 +256,38 @@ function getWeekString(date) {
  * @param {number} days
  * @returns {TrendPoint[]}
  */
-export function getTrendTimeline(tag, days = 84) {
-  return new Promise(async (resolve) => {
-    const articles = await getAllArticles();
-    const cutoffDate = new Date();
-    cutoffDate.setDate(cutoffDate.getDate() - days);
-    
-    const filtered = articles.filter(a => {
-      if (!a.tags?.includes(tag)) return false;
-      const pubDate = new Date(a.published);
-      return pubDate >= cutoffDate;
-    });
-    
-    // Group by week
-    const weekCounts = new Map();
-    for (const article of filtered) {
-      const week = getWeekString(new Date(article.published));
-      weekCounts.set(week, (weekCounts.get(week) || 0) + 1);
-    }
-    
-    // Fill in missing weeks with 0
-    const result = [];
-    const now = new Date();
-    for (let i = 0; i < Math.ceil(days / 7); i++) {
-      const d = new Date(now);
-      d.setDate(d.getDate() - i * 7);
-      const week = getWeekString(d);
-      result.unshift({
-        week,
-        count: weekCounts.get(week) || 0,
-      });
-    }
-    
-    resolve(result);
+export async function getTrendTimeline(tag, days = 84) {
+  const articles = await getAllArticles();
+  const cutoffDate = new Date();
+  cutoffDate.setDate(cutoffDate.getDate() - days);
+  
+  const filtered = articles.filter(a => {
+    if (!a.tags?.includes(tag)) return false;
+    const pubDate = new Date(a.published);
+    return pubDate >= cutoffDate;
   });
+  
+  // Group by week
+  const weekCounts = new Map();
+  for (const article of filtered) {
+    const week = getWeekString(new Date(article.published));
+    weekCounts.set(week, (weekCounts.get(week) || 0) + 1);
+  }
+  
+  // Fill in missing weeks with 0
+  const result = [];
+  const now = new Date();
+  for (let i = 0; i < Math.ceil(days / 7); i++) {
+    const d = new Date(now);
+    d.setDate(d.getDate() - i * 7);
+    const week = getWeekString(d);
+    result.unshift({
+      week,
+      count: weekCounts.get(week) || 0,
+    });
+  }
+  
+  return result;
 }
 
 /**
@@ -285,69 +295,64 @@ export function getTrendTimeline(tag, days = 84) {
  * @param {number} days
  * @returns {BuzzTopic[]}
  */
-export function getBuzzingTopics(days = 30) {
-  return new Promise(async (resolve) => {
-    const articles = await getAllArticles();
-    const cutoffDate = new Date();
-    cutoffDate.setDate(cutoffDate.getDate() - days);
-    
-    const recentArticles = articles.filter(a => {
-      const pubDate = new Date(a.published);
-      return pubDate >= cutoffDate && a.tags;
-    });
-    
-    // Count all tags
-    const tagCounts = new Map();
-    for (const article of recentArticles) {
-      for (const tag of article.tags || []) {
-        tagCounts.set(tag, (tagCounts.get(tag) || 0) + 1);
-      }
-    }
-    
-    if (tagCounts.size === 0) {
-      resolve([]);
-      return;
-    }
-    
-    // Calculate average
-    const counts = Array.from(tagCounts.values());
-    const avg = counts.reduce((a, b) => a + b, 0) / counts.length;
-    
-    // Compare with previous period for trend
-    const prevCutoff = new Date();
-    prevCutoff.setDate(prevCutoff.getDate() - days * 2);
-    const prevArticles = articles.filter(a => {
-      const pubDate = new Date(a.published);
-      return pubDate >= prevCutoff && pubDate < cutoffDate && a.tags;
-    });
-    
-    const prevTagCounts = new Map();
-    for (const article of prevArticles) {
-      for (const tag of article.tags || []) {
-        prevTagCounts.set(tag, (prevTagCounts.get(tag) || 0) + 1);
-      }
-    }
-    
-    // Build result with trend indicator
-    const result = [];
-    for (const [tag, count] of tagCounts) {
-      const prevCount = prevTagCounts.get(tag) || 0;
-      let trend = "stable";
-      
-      if (count > avg * 2 && count > prevCount * 1.5) {
-        trend = "rising";
-      } else if (count < prevCount * 0.5) {
-        trend = "falling";
-      }
-      
-      result.push({ tag, count, trend });
-    }
-    
-    // Sort by count descending
-    result.sort((a, b) => b.count - a.count);
-    
-    resolve(result);
+export async function getBuzzingTopics(days = 30) {
+  const articles = await getAllArticles();
+  const cutoffDate = new Date();
+  cutoffDate.setDate(cutoffDate.getDate() - days);
+  
+  const recentArticles = articles.filter(a => {
+    const pubDate = new Date(a.published);
+    return pubDate >= cutoffDate && a.tags;
   });
+  
+  // Count all tags
+  const tagCounts = new Map();
+  for (const article of recentArticles) {
+    for (const tag of article.tags || []) {
+      tagCounts.set(tag, (tagCounts.get(tag) || 0) + 1);
+    }
+  }
+  
+  if (tagCounts.size === 0) return [];
+  
+  // Calculate average
+  const counts = Array.from(tagCounts.values());
+  const avg = counts.reduce((a, b) => a + b, 0) / counts.length;
+  
+  // Compare with previous period for trend
+  const prevCutoff = new Date();
+  prevCutoff.setDate(prevCutoff.getDate() - days * 2);
+  const prevArticles = articles.filter(a => {
+    const pubDate = new Date(a.published);
+    return pubDate >= prevCutoff && pubDate < cutoffDate && a.tags;
+  });
+  
+  const prevTagCounts = new Map();
+  for (const article of prevArticles) {
+    for (const tag of article.tags || []) {
+      prevTagCounts.set(tag, (prevTagCounts.get(tag) || 0) + 1);
+    }
+  }
+  
+  // Build result with trend indicator
+  const result = [];
+  for (const [tag, count] of tagCounts) {
+    const prevCount = prevTagCounts.get(tag) || 0;
+    let trend = "stable";
+    
+    if (count > avg * 2 && count > prevCount * 1.5) {
+      trend = "rising";
+    } else if (count < prevCount * 0.5) {
+      trend = "falling";
+    }
+    
+    result.push({ tag, count, trend });
+  }
+  
+  // Sort by count descending
+  result.sort((a, b) => b.count - a.count);
+  
+  return result;
 }
 
 export default {
