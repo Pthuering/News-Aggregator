@@ -47,15 +47,9 @@ Gib für jede Entity eine Kurzinfo in 1-2 Sätzen auf Deutsch."
 
 ### API-Call
 
-Model: claude-sonnet-4-20250514 mit aktiviertem Web-Search-Tool:
-```javascript
-tools: [{
-  type: "web_search_20250305",
-  name: "web_search"
-}]
-```
-
-So kann das Modell aktuelle Infos zu Unternehmen nachschlagen.
+Model: Same NVIDIA API (`z-ai/glm4.7`) used by classify/match services.
+No web search tool available - enrichment based on model's training knowledge.
+Call via existing Cloudflare worker proxy (same pattern as matchService).
 
 ### Datenmodell erweitern
 
