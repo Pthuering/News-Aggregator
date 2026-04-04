@@ -140,6 +140,7 @@ export async function classifyNew(onProgress) {
               tags: normalizeKeywords(result.tags),
               summary_de: result.summary_de,
               reasoning: result.reasoning,
+              deadline: result.deadline || null,
               classifiedAt: new Date().toISOString(),
             });
             results.push({ success: true, articleId: article.id });
@@ -167,6 +168,7 @@ export async function classifyNew(onProgress) {
                   tags: normalizeKeywords(singleResults[0].tags),
                   summary_de: singleResults[0].summary_de,
                   reasoning: singleResults[0].reasoning,
+                  deadline: singleResults[0].deadline || null,
                   classifiedAt: new Date().toISOString(),
                 });
                 results.push({ success: true, articleId: article.id });
@@ -295,6 +297,7 @@ export async function classifySingle(article) {
     tags: normalizeKeywords(results[0].tags),
     summary_de: results[0].summary_de,
     reasoning: results[0].reasoning,
+    deadline: results[0].deadline || null,
     classifiedAt: new Date().toISOString(),
   });
 
@@ -561,6 +564,7 @@ function validateAndFormatResults(results, expectedCount) {
       tags: r.tags || [],
       summary_de: r.summary_de || "",
       reasoning: r.reasoning || "",
+      deadline: r.deadline || null,
     };
   });
 }

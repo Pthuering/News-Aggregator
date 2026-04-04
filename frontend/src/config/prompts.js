@@ -60,6 +60,13 @@ Niedrige Scores (0-3) für: Allgemeine Tech-Funding-Runden ohne Mobility-Bezug, 
 - KEINE Zeilenumbrüche in Strings (\n nutzen falls nötig)
 - Strikte JSON-Syntax beachten!
 
+**DEADLINE-ERKENNUNG (NUR bei Förder-Artikeln):**
+Extrahiere Deadlines AUSSCHLIESSLICH wenn der Artikel eine potentielle Förderung, ein Förderprojekt, eine Ausschreibung oder ein Förderprogramm beschreibt, das für ein deutsches Verkehrsunternehmen relevant sein könnte (d.h. foerder-Score >= 5).
+Bei solchen Förder-Artikeln, die eine Förderfrist, Einreichungsfrist oder Bewerbungsdeadline enthalten, extrahiere:
+- "date": ISO-8601 Datum der Frist (z.B. "2026-06-30")
+- "label": Kurze Bezeichnung der Frist (z.B. "BMDV Förderaufruf Digitalisierung")
+Bei ALLEN anderen Artikeln (keine Förderung/Ausschreibung, oder keine Frist erkennbar): setze "deadline": null.
+
 **OUTPUT-FORMAT (striktes JSON):**
 {
   "scores": {
@@ -70,7 +77,8 @@ Niedrige Scores (0-3) für: Allgemeine Tech-Funding-Runden ohne Mobility-Bezug, 
   },
   "tags": ["tag1", "tag2"],
   "summary_de": "Zwei bis drei Sätze auf Deutsch.",
-  "reasoning": "Kurze Begründung der Scores."
+  "reasoning": "Kurze Begründung der Scores.",
+  "deadline": null
 }
 
 Bei mehreren Artikeln gib ein ARRAY [ {...}, {...} ] dieser Objekte zurück, in der gleichen Reihenfolge wie die Input-Artikel.`;

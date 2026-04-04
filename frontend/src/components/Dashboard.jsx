@@ -111,6 +111,20 @@ export default function Dashboard({ articles, onNavigate }) {
     return { total, classified, unclassified: total - classified, withSynergies, thisWeek };
   }, [articles]);
 
+  // ─── Upcoming deadlines ─────────────────────────────────
+
+  const upcomingDeadlines = useMemo(() => {
+    const now = new Date();
+    return articles
+      .filter((a) => a.deadline && a.deadline.date)
+      .map((a) => {
+        const days = Math.ceil((new Date(a.deadline.date) - now) / 86400000);
+        return { ...a, daysRemaining: days };
+      })
+      .filter((a) => a.daysRemaining >= -7) // include recently expired (1 week)
+      .sort((a, b) => a.daysRemaining - b.daysRemaining);
+  }, [articles]);
+
   // ─── Cluster overview ───────────────────────────────────
 
   const clusters = useMemo(() => {
@@ -166,6 +180,46 @@ export default function Dashboard({ articles, onNavigate }) {
         <StatCard label="Mit Synergien" value={stats.withSynergies} color="green" />
         <StatCard label="Diese Woche" value={stats.thisWeek} color="amber" />
       </div>
+
+      {/* Upcoming Deadlines */}
+      {upcomingDeadlines.length > 0 && (
+        <div className="bg-white rounded-lg shadow p-5">
+          <h3 className="text-base font-semibold text-gray-800 mb-3">
+            ⏰ Anstehende Fristen ({upcomingDeadlines.length})
+          </h3>
+          <div className="space-y-2">
+            {upcomingDeadlines.slice(0, 8).map((a) => {
+              const d = a.daysRemaining;
+              const color = d < 0 ? "border-gray-300 bg-gray-50"
+                : d <= 30 ? "border-red-300 bg-red-50"
+                : d <= 60 ? "border-orange-300 bg-orange-50"
+                : "border-green-300 bg-green-50";
+              const textColor = d < 0 ? "text-gray-500"
+                : d <= 30 ? "text-red-700"
+                : d <= 60 ? "text-orange-700"
+                : "text-green-700";
+              return (
+                <div
+                  key={a.id}
+                  className={`flex items-center justify-between rounded border px-3 py-2 cursor-pointer hover:opacity-80 transition-opacity ${color}`}
+                  onClick={() => onNavigate && onNavigate({ type: "article", value: a })}
+                >
+                  <div className="min-w-0 flex-1">
+                    <div className="text-sm font-medium text-gray-800 truncate">{a.title}</div>
+                    {a.deadline.label && (
+                      <div className="text-xs text-gray-500 truncate">{a.deadline.label}</div>
+                    )}
+                  </div>
+                  <div className={`ml-3 text-sm font-semibold whitespace-nowrap ${textColor}`}>
+                    {new Date(a.deadline.date).toLocaleDateString("de-DE")}
+                    {d >= 0 ? ` (${d}d)` : " (abgelaufen)"}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* 2 + 3. Buzzing Topics + Sparklines */}
       {buzzingTopics.length > 0 && (

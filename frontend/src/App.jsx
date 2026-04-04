@@ -835,6 +835,23 @@ function App() {
                       </div>
                     )}
 
+                    {/* Deadline Banner */}
+                    {article.deadline && article.deadline.date && (() => {
+                      const days = Math.ceil((new Date(article.deadline.date) - new Date()) / 86400000);
+                      if (days < -30) return null; // hide long-past deadlines
+                      const color = days < 0 ? "bg-gray-100 text-gray-500 border-gray-300"
+                        : days <= 30 ? "bg-red-50 text-red-700 border-red-300"
+                        : days <= 60 ? "bg-orange-50 text-orange-700 border-orange-300"
+                        : "bg-green-50 text-green-700 border-green-300";
+                      return (
+                        <div className={`mt-2 px-3 py-1.5 rounded border text-xs font-medium ${color}`}>
+                          ⏰ Frist: {new Date(article.deadline.date).toLocaleDateString("de-DE")}
+                          {days >= 0 ? ` (${days} Tage)` : " (abgelaufen)"}
+                          {article.deadline.label && ` – ${article.deadline.label}`}
+                        </div>
+                      );
+                    })()}
+
                     {/* Tags */}
                     {article.tags && article.tags.length > 0 && (
                       <div className="mt-2 flex flex-wrap gap-1">
