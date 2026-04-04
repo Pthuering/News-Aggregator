@@ -18,6 +18,7 @@ import ArticleDetail from "./components/ArticleDetail.jsx";
 import ReportGenerator from "./components/ReportGenerator.jsx";
 import ProjectManager from "./components/ProjectManager.jsx";
 import KeywordOverview from "./components/KeywordOverview.jsx";
+import Dashboard from "./components/Dashboard.jsx";
 
 function App() {
   const [articles, setArticles] = useState([]);
@@ -323,6 +324,11 @@ function App() {
       );
     }
 
+    // Cluster filter
+    if (filters.clusterId) {
+      result = result.filter((a) => a.clusterId === filters.clusterId);
+    }
+
     // Per-lens score ranges
     if (filters.scores) {
       result = result.filter((a) => {
@@ -512,6 +518,7 @@ function App() {
               {/* Tab Navigation */}
               <nav className="flex gap-1">
                 {[
+                  { id: "dashboard", label: "Dashboard" },
                   { id: "articles", label: "Artikel" },
                   { id: "projects", label: "Projekte" },
                   { id: "keywords", label: "Keywords" },
@@ -546,6 +553,25 @@ function App() {
         {/* === PROJECTS TAB === */}
         {activeTab === "projects" && (
           <ProjectManager onClose={() => { setActiveTab("articles"); loadProjectCount(); }} />
+        )}
+
+        {/* === DASHBOARD TAB === */}
+        {activeTab === "dashboard" && (
+          <Dashboard
+            articles={articles}
+            onNavigate={(nav) => {
+              if (nav.type === "tag") {
+                setFilters((prev) => ({ ...prev, tags: [nav.value], tagMatch: "any" }));
+                setActiveTab("articles");
+              } else if (nav.type === "cluster") {
+                setFilters((prev) => ({ ...prev, clusterId: nav.value }));
+                setActiveTab("articles");
+              } else if (nav.type === "project") {
+                setFilters((prev) => ({ ...prev, project: nav.value, synergiesOnly: true }));
+                setActiveTab("articles");
+              }
+            }}
+          />
         )}
 
         {/* === KEYWORDS TAB === */}
