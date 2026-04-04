@@ -19,36 +19,16 @@
  * @errors  Bei DB-Fehlern: Error werfen
  */
 
-import { openDB } from "idb";
+import { getDB } from "./db.js";
 
-const DB_NAME = "trend-radar";
-const DB_VERSION = 1;
 const STORE_NAME = "projects";
-
-let db = null;
-
-/**
- * Initialize the project store
- * @returns {Promise<void>}
- */
-async function initStore() {
-  if (db) return;
-
-  db = await openDB(DB_NAME, DB_VERSION, {
-    upgrade(db, oldVersion, newVersion, transaction) {
-      if (!db.objectStoreNames.contains(STORE_NAME)) {
-        db.createObjectStore(STORE_NAME, { keyPath: "id" });
-      }
-    },
-  });
-}
 
 /**
  * Get all projects
  * @returns {Promise<ProjectConfig[]>}
  */
 export async function getProjects() {
-  await initStore();
+  const db = await getDB();
   return db.getAll(STORE_NAME);
 }
 
@@ -58,7 +38,7 @@ export async function getProjects() {
  * @returns {Promise<void>}
  */
 export async function saveProject(project) {
-  await initStore();
+  const db = await getDB();
   await db.put(STORE_NAME, project);
 }
 
@@ -68,7 +48,7 @@ export async function saveProject(project) {
  * @returns {Promise<void>}
  */
 export async function deleteProject(id) {
-  await initStore();
+  const db = await getDB();
   await db.delete(STORE_NAME, id);
 }
 

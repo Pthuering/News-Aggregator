@@ -29,33 +29,16 @@
  * @errors  Bei DB-Fehlern: Error werfen, Caller behandelt
  */
 
-import { openDB } from "idb";
+import { getDB } from "./db.js";
 
-const DB_NAME = "trend-radar";
-const DB_VERSION = 1;
 const STORE_NAME = "articles";
-
-let db = null;
 
 /**
  * Initialize the database
  * @returns {Promise<void>}
  */
 export async function initDB() {
-  if (db) return;
-
-  db = await openDB(DB_NAME, DB_VERSION, {
-    upgrade(db, oldVersion, newVersion, transaction) {
-      if (!db.objectStoreNames.contains(STORE_NAME)) {
-        const store = db.createObjectStore(STORE_NAME, { keyPath: "id" });
-        // Create indexes for filtering
-        store.createIndex("published", "published", { unique: false });
-        store.createIndex("source", "source", { unique: false });
-        store.createIndex("bookmarked", "bookmarked", { unique: false });
-        store.createIndex("sourceCategory", "sourceCategory", { unique: false });
-      }
-    },
-  });
+  await getDB();
 }
 
 /**
@@ -64,7 +47,7 @@ export async function initDB() {
  * @returns {Promise<number>} - Number of new articles saved
  */
 export async function saveArticles(articles) {
-  if (!db) await initDB();
+  const db = await getDB();
 
   let newCount = 0;
   const tx = db.transaction(STORE_NAME, "readwrite");
@@ -101,7 +84,7 @@ export async function saveArticles(articles) {
  * @returns {Promise<boolean>}
  */
 export async function articleExists(id) {
-  if (!db) await initDB();
+  const db = await getDB();
   const article = await db.get(STORE_NAME, id);
   return !!article;
 }
@@ -112,7 +95,7 @@ export async function articleExists(id) {
  * @returns {Promise<EnrichedArticle|null>}
  */
 export async function getArticleById(id) {
-  if (!db) await initDB();
+  const db = await getDB();
   return db.get(STORE_NAME, id);
 }
 
@@ -121,7 +104,7 @@ export async function getArticleById(id) {
  * @returns {Promise<EnrichedArticle[]>}
  */
 export async function getAllArticles() {
-  if (!db) await initDB();
+  const db = await getDB();
   return db.getAll(STORE_NAME);
 }
 
@@ -130,7 +113,7 @@ export async function getAllArticles() {
  * @returns {Promise<RawArticle[]>}
  */
 export async function getUnclassifiedArticles() {
-  if (!db) await initDB();
+  const db = await getDB();
   const all = await db.getAll(STORE_NAME);
   return all.filter((a) => !a.scores);
 }
@@ -142,7 +125,7 @@ export async function getUnclassifiedArticles() {
  * @returns {Promise<void>}
  */
 export async function updateArticle(id, partial) {
-  if (!db) await initDB();
+  const db = await getDB();
 
   const existing = await db.get(STORE_NAME, id);
   if (!existing) {
@@ -170,7 +153,7 @@ export async function updateArticle(id, partial) {
  * @returns {Promise<EnrichedArticle[]>}
  */
 export async function getArticlesByFilter(filter = {}) {
-  if (!db) await initDB();
+  const db = await getDB();
 
   let articles = await db.getAll(STORE_NAME);
 
@@ -228,7 +211,7 @@ export async function getArticlesByFilter(filter = {}) {
  * @returns {Promise<EnrichedArticle[]>}
  */
 export async function exportAll() {
-  if (!db) await initDB();
+  const db = await getDB();
   return db.getAll(STORE_NAME);
 }
 
@@ -238,7 +221,7 @@ export async function exportAll() {
  * @returns {Promise<void>}
  */
 export async function importAll(articles) {
-  if (!db) await initDB();
+  const db = await getDB();
 
   const tx = db.transaction(STORE_NAME, "readwrite");
   const store = tx.objectStore(STORE_NAME);
@@ -259,7 +242,7 @@ export async function importAll(articles) {
  * @returns {Promise<void>}
  */
 export async function clearArticles() {
-  if (!db) await initDB();
+  const db = await getDB();
   await db.clear(STORE_NAME);
 }
 
