@@ -13,6 +13,7 @@ import { getClassifyPrompt } from "../config/prompts.js";
 import { API_CONFIG, CLASSIFY_CONFIG } from "../config/settings.js";
 import { getNvidiaApiKey } from "../stores/settingsStore.js";
 import { getUnclassifiedArticles, updateArticle } from "../stores/articleStore.js";
+import { normalizeKeywords } from "../utils/keywordUtils.js";
 
 // 4 Worker-URLs für parallele Verarbeitung
 const WORKER_URLS = [
@@ -136,7 +137,7 @@ export async function classifyNew(onProgress) {
           if (result) {
             await updateArticle(article.id, {
               scores: result.scores,
-              tags: result.tags,
+              tags: normalizeKeywords(result.tags),
               summary_de: result.summary_de,
               reasoning: result.reasoning,
               classifiedAt: new Date().toISOString(),
@@ -163,7 +164,7 @@ export async function classifyNew(onProgress) {
               if (singleResults[0]) {
                 await updateArticle(article.id, {
                   scores: singleResults[0].scores,
-                  tags: singleResults[0].tags,
+                  tags: normalizeKeywords(singleResults[0].tags),
                   summary_de: singleResults[0].summary_de,
                   reasoning: singleResults[0].reasoning,
                   classifiedAt: new Date().toISOString(),
@@ -228,7 +229,6 @@ async function classifyBatchWithWorker(workerUrl, apiKey, articles) {
       { role: "system", content: systemPrompt },
       { role: "user", content: userMessage },
     ],
-    max_tokens: API_CONFIG.maxTokens,
     temperature: 0.3,
   };
 
@@ -292,7 +292,7 @@ export async function classifySingle(article) {
 
   await updateArticle(article.id, {
     scores: results[0].scores,
-    tags: results[0].tags,
+    tags: normalizeKeywords(results[0].tags),
     summary_de: results[0].summary_de,
     reasoning: results[0].reasoning,
     classifiedAt: new Date().toISOString(),

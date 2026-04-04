@@ -124,7 +124,6 @@ export async function generateReport(config, onChunk) {
             { role: "user", content: userMessage },
           ],
           temperature: 0.5,
-          max_tokens: 5000000,
           stream: true,
         }),
       });

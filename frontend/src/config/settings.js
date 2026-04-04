@@ -29,7 +29,6 @@ export function getProxyUrl() {
  */
 export const API_CONFIG = {
   model: "z-ai/glm4.7",
-  maxTokens: 1500,
 };
 
 /**

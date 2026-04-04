@@ -1,19 +1,22 @@
 /**
  * @module App
- * @purpose Main application shell for Trend Radar with feed ingest and classification
- *
- * Kontext: Phase 2d - Wire classify to UI
+ * @purpose Main application shell for Trend Radar with feed ingest, classification,
+ *          project management, synergy matching, and keyword intelligence
  */
 
 import { useState, useEffect, useMemo } from "react";
 import { initDB, getAllArticles, getUnclassifiedArticles, updateArticle } from "./stores/articleStore.js";
 import { fetchAllFeeds } from "./services/feedService.js";
 import { classifyNew } from "./services/classifyService.js";
+import { matchNewArticles } from "./services/matchService.js";
 import { getNvidiaApiKey } from "./stores/settingsStore.js";
+import { getProjects } from "./stores/projectStore.js";
 import Settings from "./components/Settings.jsx";
 import FilterBar, { INITIAL_FILTERS } from "./components/FilterBar.jsx";
 import ArticleDetail from "./components/ArticleDetail.jsx";
 import ReportGenerator from "./components/ReportGenerator.jsx";
+import ProjectManager from "./components/ProjectManager.jsx";
+import KeywordOverview from "./components/KeywordOverview.jsx";
 
 function App() {
   const [articles, setArticles] = useState([]);
@@ -30,6 +33,12 @@ function App() {
   const [selectedArticle, setSelectedArticle] = useState(null);
   const [selectedArticleIds, setSelectedArticleIds] = useState([]);
   const [showReportGenerator, setShowReportGenerator] = useState(false);
+  const [activeTab, setActiveTab] = useState("articles"); // "articles" | "projects" | "keywords"
+  const [matchLoading, setMatchLoading] = useState(false);
+  const [matchProgress, setMatchProgress] = useState({ current: 0, total: 0, skipped: 0 });
+  const [matchResult, setMatchResult] = useState(null);
+  const [projectCount, setProjectCount] = useState(0);
+  const [unmatchedCount, setUnmatchedCount] = useState(0);
 
   // Initialize DB and check API key on mount
   useEffect(() => {
@@ -40,6 +49,7 @@ function App() {
     await initDB();
     await loadArticles();
     await checkApiKey();
+    await loadProjectCount();
     setInitialized(true);
   };
 
@@ -57,12 +67,22 @@ function App() {
     // Count unclassified
     const unclassified = await getUnclassifiedArticles();
     setUnclassifiedCount(unclassified.length);
+
+    // Count unmatched (have scores but no synergies)
+    const unmatched = all.filter(a => a.scores && a.synergies === undefined);
+    setUnmatchedCount(unmatched.length);
   };
 
   // Check if API key is set
   const checkApiKey = async () => {
     const key = await getNvidiaApiKey();
     setHasApiKey(!!key);
+  };
+
+  // Load project count
+  const loadProjectCount = async () => {
+    const projects = await getProjects();
+    setProjectCount(projects.length);
   };
 
   // Handle feed update button
@@ -110,6 +130,87 @@ function App() {
     } finally {
       setClassifyLoading(false);
       setClassifyProgress({ current: 0, total: 0 });
+    }
+  };
+
+  // Handle synergy matching button
+  const handleMatch = async () => {
+    if (!hasApiKey || projectCount === 0 || unmatchedCount === 0) return;
+
+    setMatchLoading(true);
+    setMatchResult(null);
+    setMatchProgress({ current: 0, total: 0, skipped: 0 });
+
+    try {
+      const result = await matchNewArticles((progress) => {
+        setMatchProgress(progress);
+      });
+      setMatchResult(result);
+      await loadArticles();
+    } catch (error) {
+      setMatchResult({
+        matched: 0,
+        synergiesFound: 0,
+        skipped: 0,
+        errors: [error.message],
+      });
+    } finally {
+      setMatchLoading(false);
+      setMatchProgress({ current: 0, total: 0, skipped: 0 });
+    }
+  };
+
+  // Handle full pipeline: feeds → classify → match
+  const handleFullRun = async () => {
+    // Step 1: Feeds
+    setLoading(true);
+    setResult(null);
+    setClassifyResult(null);
+    setMatchResult(null);
+
+    try {
+      const feedResult = await fetchAllFeeds();
+      setResult(feedResult);
+      await loadArticles();
+    } catch (error) {
+      setResult({ newCount: 0, skipped: 0, errors: [{ source: "Allgemein", error: error.message }] });
+      setLoading(false);
+      return;
+    }
+    setLoading(false);
+
+    // Step 2: Classify (if there's anything to classify and API key is set)
+    const unclassified = await getUnclassifiedArticles();
+    if (hasApiKey && unclassified.length > 0) {
+      setClassifyLoading(true);
+      setClassifyProgress({ current: 0, total: unclassified.length });
+      try {
+        const cResult = await classifyNew((progress) => setClassifyProgress(progress));
+        setClassifyResult(cResult);
+        await loadArticles();
+      } catch (error) {
+        setClassifyResult({ classified: 0, failed: unclassified.length, errors: [error.message] });
+      }
+      setClassifyLoading(false);
+      setClassifyProgress({ current: 0, total: 0 });
+    }
+
+    // Step 3: Match (if projects exist and unmatched articles)
+    const allAfterClassify = await getAllArticles();
+    const unmatchedAfter = allAfterClassify.filter(a => a.scores && a.synergies === undefined);
+    const projectsNow = await getProjects();
+    if (hasApiKey && projectsNow.length > 0 && unmatchedAfter.length > 0) {
+      setMatchLoading(true);
+      setMatchProgress({ current: 0, total: 0, skipped: 0 });
+      try {
+        const mResult = await matchNewArticles((progress) => setMatchProgress(progress));
+        setMatchResult(mResult);
+        await loadArticles();
+      } catch (error) {
+        setMatchResult({ matched: 0, synergiesFound: 0, skipped: 0, errors: [error.message] });
+      }
+      setMatchLoading(false);
+      setMatchProgress({ current: 0, total: 0, skipped: 0 });
     }
   };
 
@@ -180,6 +281,18 @@ function App() {
     // Bookmarked only (only filter if explicitly enabled and there are bookmarked articles)
     if (filters.bookmarkedOnly) {
       result = result.filter((a) => a.bookmarked === true);
+    }
+
+    // Synergies only
+    if (filters.synergiesOnly) {
+      result = result.filter((a) => a.synergies && a.synergies.length > 0);
+    }
+
+    // Project filter (filter by specific project synergy)
+    if (filters.project && filters.project !== "all") {
+      result = result.filter((a) => 
+        a.synergies?.some((s) => s.projectId === filters.project)
+      );
     }
 
     // Per-lens score ranges
@@ -366,7 +479,26 @@ function App() {
       <header className="bg-white shadow-sm border-b border-gray-200">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
-            <h1 className="text-2xl font-bold text-gray-900">Trend Radar</h1>
+            <div className="flex items-center gap-6">
+              <h1 className="text-2xl font-bold text-gray-900">Trend Radar</h1>
+              {/* Tab Navigation */}
+              <nav className="flex gap-1">
+                {[
+                  { id: "articles", label: "Artikel" },
+                  { id: "projects", label: "Projekte" },
+                  { id: "keywords", label: "Keywords" },
+                ].map((tab) => (
+                  <button
+                    key={tab.id}
+                    onClick={() => setActiveTab(tab.id)}
+                    style={activeTab === tab.id ? { backgroundColor: '#2563eb', color: '#fff' } : { backgroundColor: '#f3f4f6', color: '#374151' }}
+                    className="px-3 py-1.5 text-sm font-medium rounded-md transition-colors"
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </nav>
+            </div>
             <button
               onClick={() => {
                 console.log("Settings clicked");
@@ -382,6 +514,22 @@ function App() {
 
       {/* Main content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+
+        {/* === PROJECTS TAB === */}
+        {activeTab === "projects" && (
+          <ProjectManager onClose={() => { setActiveTab("articles"); loadProjectCount(); }} />
+        )}
+
+        {/* === KEYWORDS TAB === */}
+        {activeTab === "keywords" && (
+          <KeywordOverview
+            articles={articles}
+            onArticleClick={handleArticleClick}
+          />
+        )}
+
+        {/* === ARTICLES TAB === */}
+        {activeTab === "articles" && (<>
         {/* Action buttons + Filter Bar */}
         <div className="mb-6 space-y-4">
           <div className="flex flex-wrap gap-3">
@@ -411,12 +559,42 @@ function App() {
             </button>
 
             <button
+              onClick={handleMatch}
+              disabled={matchLoading || !hasApiKey || projectCount === 0 || unmatchedCount === 0}
+              title={
+                !hasApiKey
+                  ? "API-Key in Einstellungen hinterlegen"
+                  : projectCount === 0
+                  ? "Erst Projekte anlegen (Tab 'Projekte')"
+                  : unmatchedCount === 0
+                  ? "Keine ungematchten Artikel"
+                  : ""
+              }
+              style={matchLoading ? {} : { backgroundColor: '#0d9488' }}
+              className="px-4 py-2 text-white rounded-md hover:opacity-90 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+            >
+              {matchLoading
+                ? `Synergien... (${matchProgress.current}/${matchProgress.total})`
+                : `Synergien prüfen (${unmatchedCount})`}
+            </button>
+
+            <button
               onClick={handleOpenReportGenerator}
               disabled={selectedArticleIds.length === 0}
               title={selectedArticleIds.length === 0 ? "Erst Artikel per Checkbox auswählen" : ""}
               className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:bg-gray-300 disabled:text-gray-500 disabled:cursor-not-allowed transition-colors"
             >
               Report erstellen{selectedArticleIds.length > 0 ? ` (${selectedArticleIds.length})` : ""}
+            </button>
+
+            <button
+              onClick={handleFullRun}
+              disabled={loading || classifyLoading || matchLoading}
+              title="Feeds aktualisieren → Klassifizieren → Synergien prüfen"
+              style={loading || classifyLoading || matchLoading ? {} : { backgroundColor: '#7c3aed' }}
+              className="px-4 py-2 text-white rounded-md hover:opacity-90 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+            >
+              {loading || classifyLoading || matchLoading ? "Läuft..." : "Komplett-Durchlauf"}
             </button>
           </div>
 
@@ -469,6 +647,19 @@ function App() {
                 {classifyResult.errors.length > 1 && ` (+${classifyResult.errors.length - 1} weitere)`}
               </div>
             )}
+          </div>
+        )}
+
+        {/* Match result */}
+        {matchResult && (
+          <div className="mb-4 p-4 bg-white rounded-lg shadow" style={{ borderLeft: '4px solid #0d9488' }}>
+            <div className="text-sm text-gray-700">
+              <span className="font-medium">{matchResult.matched}</span> Synergien gefunden,{" "}
+              <span className="font-medium">{matchResult.skipped}</span> per Vorfilter übersprungen
+              {matchResult.failed > 0 && (
+                <>, <span className="font-medium text-red-600">{matchResult.failed} fehlgeschlagen</span></>
+              )}
+            </div>
           </div>
         )}
 
@@ -600,6 +791,16 @@ function App() {
                         >
                           MA: {article.scores.markt}
                         </span>
+                        {/* Synergy badge */}
+                        {article.synergies && article.synergies.length > 0 && (
+                          <span
+                            className="px-2 py-0.5 text-xs rounded-full"
+                            style={{ backgroundColor: '#ccfbf1', color: '#0d9488' }}
+                            title={article.synergies.map(s => `${s.projectId}: ${s.score}/10`).join(', ')}
+                          >
+                            🔗 {article.synergies.length}
+                          </span>
+                        )}
                       </div>
                     )}
                   </div>
@@ -609,7 +810,7 @@ function App() {
           )}
         </div>
 
-
+        </>)}
       </main>
 
       {/* Settings Modal */}

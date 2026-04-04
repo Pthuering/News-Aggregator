@@ -22,6 +22,7 @@ import {
   deleteProject,
   initDefaultProjects,
 } from "../stores/projectStore.js";
+import { normalizeKeywords } from "../utils/keywordUtils.js";
 
 function ProjectManager({ onClose }) {
   const [projects, setProjects] = useState([]);
@@ -89,13 +90,15 @@ function ProjectManager({ onClose }) {
     e.preventDefault();
 
     const project = {
-      id: editing || `proj-${Date.now()}`,
+      id: editing || `proj_${Math.random().toString(36).substring(2, 10)}`,
       name: formData.name,
       description: formData.description,
-      technologies: formData.technologies
-        .split(",")
-        .map((t) => t.trim())
-        .filter((t) => t),
+      technologies: normalizeKeywords(
+        formData.technologies
+          .split(",")
+          .map((t) => t.trim())
+          .filter((t) => t)
+      ),
       status: formData.status,
       challenges: formData.challenges
         .split(",")
@@ -205,7 +208,7 @@ function ProjectManager({ onClose }) {
                         </span>
                       </div>
                       <p className="text-sm text-gray-600 mb-3">
-                        {project.description}
+                        {project.description.length > 100 ? project.description.substring(0, 100) + '...' : project.description}
                       </p>
 
                       {project.technologies.length > 0 && (
@@ -300,6 +303,7 @@ function ProjectManager({ onClose }) {
               }
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
+            <p className="mt-1 text-xs text-gray-500">Beschreibe das Projekt so, dass eine KI Bezüge zu Fachartikeln erkennen kann.</p>
           </div>
 
           <div>
@@ -347,6 +351,7 @@ function ProjectManager({ onClose }) {
               placeholder="z.B. Budget, Zeit, Ressourcen"
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
+            <p className="mt-1 text-xs text-gray-500">Offene Probleme oder Fragestellungen, bei denen externe Impulse helfen könnten.</p>
           </div>
 
           <div className="flex gap-2 pt-4">

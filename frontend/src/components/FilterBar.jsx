@@ -17,7 +17,8 @@
  * @errors None - all inputs are controlled
  */
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
+import { getProjects } from "../stores/projectStore.js";
 
 // Initial filter state
 export const INITIAL_FILTERS = {
@@ -26,6 +27,9 @@ export const INITIAL_FILTERS = {
   
   // Source category
   category: "all",
+  
+  // Project filter (synergy-based)
+  project: "all",
   
   // Lens score ranges (min/max for each lens)
   scores: {
@@ -48,6 +52,9 @@ export const INITIAL_FILTERS = {
   
   // Bookmark filter
   bookmarkedOnly: false,
+  
+  // Synergy filter
+  synergiesOnly: false,
   
   // Sorting
   sortBy: "newest", // "newest" | "oldest" | "relevance" | "score_oepnv" | "score_tech"
@@ -88,6 +95,12 @@ const SORT_OPTIONS = [
 
 function FilterBar({ filters = INITIAL_FILTERS, onFilterChange, availableTags = [], className = "" }) {
   const [expanded, setExpanded] = useState(false);
+  const [projects, setProjects] = useState([]);
+
+  // Load projects on mount
+  useEffect(() => {
+    getProjects().then(setProjects);
+  }, []);
 
   // Helper to update nested score filters
   const updateScoreFilter = useCallback((lens, type, value) => {
@@ -125,6 +138,8 @@ function FilterBar({ filters = INITIAL_FILTERS, onFilterChange, availableTags = 
       filters.dateTo ||
       filters.classifiedOnly ||
       filters.bookmarkedOnly ||
+      filters.synergiesOnly ||
+      filters.project !== "all" ||
       Object.values(filters.scores || {}).some(
         (s) => s.min > 0 || s.max < 10
       )
@@ -140,6 +155,8 @@ function FilterBar({ filters = INITIAL_FILTERS, onFilterChange, availableTags = 
     if (filters.dateFrom || filters.dateTo) count++;
     if (filters.classifiedOnly) count++;
     if (filters.bookmarkedOnly) count++;
+    if (filters.synergiesOnly) count++;
+    if (filters.project !== "all") count++;
     if (Object.values(filters.scores || {}).some((s) => s.min > 0 || s.max < 10)) count++;
     return count;
   })();
@@ -178,6 +195,25 @@ function FilterBar({ filters = INITIAL_FILTERS, onFilterChange, availableTags = 
               ))}
             </select>
           </div>
+
+          {/* Project filter */}
+          {projects.length > 0 && (
+            <div className="w-48">
+              <label className="block text-xs font-medium text-gray-700 mb-1">
+                Projekt
+              </label>
+              <select
+                value={filters.project || "all"}
+                onChange={(e) => onFilterChange({ ...filters, project: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+              >
+                <option value="all">Alle Projekte</option>
+                {projects.map((p) => (
+                  <option key={p.id} value={p.id}>{p.name}</option>
+                ))}
+              </select>
+            </div>
+          )}
 
           {/* Sort */}
           <div className="w-44">
@@ -234,6 +270,17 @@ function FilterBar({ filters = INITIAL_FILTERS, onFilterChange, availableTags = 
               className="w-4 h-4 text-yellow-500 rounded focus:ring-yellow-500"
             />
             <span className="text-sm text-gray-700">Nur gemerkte</span>
+          </label>
+
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={filters.synergiesOnly || false}
+              onChange={(e) => onFilterChange({ ...filters, synergiesOnly: e.target.checked })}
+              className="w-4 h-4 rounded focus:ring-teal-500"
+              style={{ accentColor: '#0d9488' }}
+            />
+            <span className="text-sm text-gray-700">Nur mit Synergien</span>
           </label>
 
           {/* Article counts */}

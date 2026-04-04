@@ -77,14 +77,44 @@ Bei mehreren Artikeln gib ein ARRAY [ {...}, {...} ] dieser Objekte zurück, in 
 }
 
 /**
- * Returns the system prompt for project matching.
- * TODO: Implement in Phase 5
- * @param {string} projectsContext - Context about all active projects
+ * Returns the system prompt for project synergy matching.
+ * @param {string} projectsContext - Formatted text of all active projects
  * @returns {string}
  */
 export function getMatchPrompt(projectsContext) {
-  // TODO: Implement in Phase 5 - Project Matching
-  return "";
+  return `Du bist ein Analyst bei einem deutschen Verkehrsunternehmen (ÖPNV).
+Deine Aufgabe ist es zu prüfen, ob die folgenden Artikel Synergien mit unseren internen Projekten aufweisen.
+
+**UNSERE PROJEKTE:**
+${projectsContext}
+
+**REGELN:**
+- Nur echte, begründbare Synergien melden
+- Score 0-10 (0=keine Synergie, 10=direkt anwendbar)
+- Nur Synergien mit Score >= 4 aufnehmen
+- relevance: 1-2 Sätze auf Deutsch, konkret und spezifisch
+- Wenn keine Synergien erkannt werden: leeres Array []
+- Wenn Keyword-Overlap mitgeliefert wird: als Hinweis nutzen, aber nicht blind übernehmen
+
+**WICHTIG - JSON FORMAT:**
+- NUR valides JSON zurückgeben, kein Markdown (keine \`\`\`json Blöcke!)
+- ALLE Strings in doppelten Anführungszeichen
+- Strikte JSON-Syntax
+
+**OUTPUT-FORMAT pro Artikel:**
+{
+  "articleIndex": 0,
+  "synergies": [
+    {
+      "projectId": "proj_xxx",
+      "projectName": "Projektname",
+      "score": 7,
+      "relevance": "Kurze Begründung der Synergie auf Deutsch."
+    }
+  ]
+}
+
+Bei mehreren Artikeln gib ein ARRAY [ {...}, {...} ] zurück in der gleichen Reihenfolge wie die Input-Artikel.`;
 }
 
 /**
