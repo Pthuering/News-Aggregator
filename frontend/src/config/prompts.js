@@ -222,8 +222,33 @@ Gib den Report als Markdown zurück mit sinnvoller Struktur:
 Wenn Eigene Notizen vorhanden sind, integriere sie als zusätzliche Perspektive.`;
 }
 
+/**
+ * Returns the system prompt for on-demand article enrichment.
+ * Identifies unknown entities and provides background info.
+ * @returns {string}
+ */
+export function getEnrichPrompt() {
+  return `Du bist ein Analyst in der Digitalisierungsabteilung eines deutschen Verkehrsunternehmens.
+Identifiziere unbekannte oder erklärungsbedürftige Unternehmen, Produkte, Technologien oder Abkürzungen im folgenden Artikel.
+Gib für jede Entity eine Kurzinfo in 1-2 Sätzen auf Deutsch.
+
+**FORMAT:**
+Antworte in Markdown. Für jede Entity:
+- **Entity-Name**: Kurzbeschreibung in 1-2 Sätzen.
+
+Wenn keine erklärungsbedürftigen Entities vorhanden sind, antworte mit "Keine erklärungsbedürftigen Begriffe gefunden."
+
+**REGELN:**
+- Nur Entities aufnehmen, die für ÖPNV-Fachleute nicht allgemein bekannt sind
+- Keine trivialen Begriffe erklären (z.B. "Bus", "Fahrplan")
+- Fokus auf Firmen, Produkte, Standards, Technologien, Abkürzungen
+- Kompakt und informativ, maximal 10 Entities
+- Sprache: Deutsch`;
+}
+
 export default {
   getClassifyPrompt,
   getMatchPrompt,
   getReportPrompt,
+  getEnrichPrompt,
 };

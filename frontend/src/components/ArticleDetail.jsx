@@ -18,10 +18,43 @@
 
 import { useState } from "react";
 import { updateArticle } from "../stores/articleStore.js";
+import { enrichArticle } from "../services/enrichService.js";
+
+/** Minimal markdown → HTML for enrichment text (bold, lists, line breaks) */
+function renderMarkdown(md) {
+  return md
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+    .replace(/^- (.+)$/gm, "<li>$1</li>")
+    .replace(/(<li>.*<\/li>)/gs, "<ul>$1</ul>")
+    .replace(/\n{2,}/g, "<br/><br/>")
+    .replace(/\n/g, "<br/>");
+}
 
 function ArticleDetail({ article, onClose, onUpdate }) {
   const [notes, setNotes] = useState(article.userNotes || "");
   const [isEditingNotes, setIsEditingNotes] = useState(false);
+  const [enrichment, setEnrichment] = useState(article.enrichment || null);
+  const [enrichLoading, setEnrichLoading] = useState(false);
+  const [enrichError, setEnrichError] = useState(null);
+
+  // Enrich article with background info
+  const handleEnrich = async () => {
+    setEnrichLoading(true);
+    setEnrichError(null);
+    try {
+      const text = await enrichArticle(article);
+      setEnrichment(text);
+      onUpdate({ ...article, enrichment: text });
+    } catch (e) {
+      console.error("Enrichment failed:", e);
+      setEnrichError(e.message);
+    } finally {
+      setEnrichLoading(false);
+    }
+  };
 
   // Toggle bookmark
   const handleBookmark = async () => {
@@ -185,6 +218,28 @@ function ArticleDetail({ article, onClose, onUpdate }) {
             )}
           </div>
         )}
+
+        {/* Enrichment / Mehr Kontext */}
+        <div className="p-4 bg-indigo-50 rounded-lg border border-indigo-200">
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="font-semibold text-indigo-800">Kontext & Hintergrund</h3>
+            <button
+              onClick={handleEnrich}
+              disabled={enrichLoading}
+              className="px-3 py-1.5 text-sm bg-indigo-600 text-white rounded-md hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              {enrichLoading ? "Wird geladen…" : enrichment ? "Kontext aktualisieren" : "Mehr Kontext"}
+            </button>
+          </div>
+          {enrichError && (
+            <div className="text-sm text-red-600 mb-2">Fehler: {enrichError}</div>
+          )}
+          {enrichment ? (
+            <div className="text-sm text-gray-700 prose prose-sm max-w-none" dangerouslySetInnerHTML={{ __html: renderMarkdown(enrichment) }} />
+          ) : (
+            <p className="text-sm text-indigo-400 italic">Klicke "Mehr Kontext" um Hintergrund-Infos zu Unternehmen, Technologien und Abkürzungen zu erhalten.</p>
+          )}
+        </div>
 
         {/* Article content */}
         <div className="prose max-w-none">
