@@ -277,38 +277,37 @@ Erstelle einen ausführlichen, gut lesbaren Analyse-Report zum Thema: "{{query}}
 
 Basierend auf den bereitgestellten Web-Suchergebnissen und Seiteninhalten, erstelle einen umfassenden Report. Schreibe wie ein Fachredakteur, der einen internen Briefing-Artikel für die Geschäftsleitung verfasst.
 
-## Executive Summary
-3-5 Sätze, die die wichtigsten Erkenntnisse zusammenfassen.
-
 ## Hintergrund & Kontext
 Erkläre den thematischen Hintergrund. Warum ist dieses Thema relevant? Welche Entwicklungen haben dazu geführt? Ordne das Thema in den größeren Branchenkontext ein.
 
 ## Kernthemen & Erkenntnisse
-Gehe auf jedes wichtige Thema einzeln ein. Beschreibe die Inhalte der gefundenen Quellen ausführlich — was wurde berichtet, welche Fakten, Zahlen oder Zitate sind relevant? Fasse nicht nur zusammen, sondern erläutere und erkläre die Zusammenhänge. Nutze Unterüberschriften für verschiedene Aspekte.
+Gehe auf jedes wichtige Thema einzeln ein. Nutze Unterüberschriften für verschiedene Aspekte. Beschreibe die konkreten Inhalte der gefundenen Quellen AUSFÜHRLICH — welche Fakten, Zahlen, Projekte, Technologien oder Entscheidungen werden berichtet? Zitiere relevante Details. Wenn eine Quelle nur vage auf etwas verweist (z.B. "es wurde über Cybersecurity gesprochen" oder "verschiedene Firmen werden anwesend sein"), dann gehe auf die dahinterliegenden konkreten Inhalte ein, die in den anderen Quellen zu finden sind. Leere Verweise ohne Substanz weglassen.
 
 ## Wichtige Akteure & Positionen
-Welche Unternehmen, Organisationen, Behörden oder Personen spielen eine Rolle? Was sind ihre Positionen, Projekte oder Ankündigungen? Gib konkrete Details aus den Quellen wieder.
+Welche Unternehmen, Organisationen, Behörden oder Personen spielen eine Rolle? Was sind ihre konkreten Positionen, Projekte oder Ankündigungen? Gib Details aus den Quellen wieder.
 
 ## Trends & Entwicklungen
-Welche Trends zeichnen sich ab? Gibt es Muster oder wiederkehrende Themen? Wie entwickelt sich das Thema über die gefundenen Quellen hinweg?
+Welche Trends zeichnen sich ab? Gibt es Muster oder wiederkehrende Themen?
 
-## Relevanz für den ÖPNV / Verkehrsunternehmen
-Was bedeuten diese Erkenntnisse konkret für ein Verkehrsunternehmen? Welche Chancen und Risiken ergeben sich? Gibt es Handlungsbedarf?
+## Bedeutung für den ÖPNV / Verkehrsunternehmen
+Gliedere diesen Abschnitt in:
+### Chancen
+### Risiken
+### Handlungsbedarf
 
-## Quellenübersicht
-Liste die wichtigsten verwendeten Quellen mit Titel und URL.
-
-## Fazit & Handlungsempfehlungen
-Konkreter Ausblick und priorisierte Empfehlungen.
+## Quellen
+Nummerierte Liste im Format: [N] URL (Datum falls bekannt)
 
 **REGELN:**
 - Sprache: Deutsch, professionell aber gut lesbar
-- Schreibe AUSFÜHRLICH — mindestens 1500 Wörter, idealerweise 2000-3000 Wörter
-- Gib die Inhalte der Quellen detailliert wieder, nicht nur stichwortartig
-- Erkläre Zusammenhänge und Hintergründe
-- Nutze konkrete Fakten, Zahlen und Beispiele aus den Quellen
-- Bei Quellenverweisen die URL in Klammern nennen
-- Verwende Markdown-Formatierung (Überschriften, Listen, Fettdruck für Schlüsselbegriffe)
+- Schreibe AUSFÜHRLICH — mindestens 2000 Wörter, idealerweise 2500-3500 Wörter
+- Gib Inhalte der Quellen DETAILLIERT wieder — konkrete Fakten, Zahlen, Namen, Projekte
+- KEINE leeren Verweise: Schreibe nicht "laut Quelle wird über X gesprochen" — schreibe stattdessen WAS konkret berichtet wird
+- Quellenverweise im Text nach IEEE-Standard: [1], [2], [3] etc.
+- Die Quellenliste am Ende enthält nur die URL und ggf. das Datum — KEINE Titel
+- KEINE Executive Summary oder einleitende Aufzählung am Anfang — starte direkt mit "Hintergrund & Kontext"
+- KEIN Fazit oder Handlungsempfehlungen-Abschnitt am Ende — der Report endet nach den Quellen
+- Verwende Markdown-Formatierung (Überschriften, Fettdruck für Schlüsselbegriffe)
 - Wenn eine Quelle besonders relevant ist, zitiere daraus ausführlicher`;
 
 /**

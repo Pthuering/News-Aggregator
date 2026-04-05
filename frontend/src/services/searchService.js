@@ -88,7 +88,7 @@ function extractPageContent(html) {
     "article, main, [role='main'], .article-body, .post-content, .entry-content, .content"
   );
   const text = (main || doc.body)?.textContent || "";
-  return text.replace(/\s+/g, " ").trim().slice(0, 3000);
+  return text.replace(/\s+/g, " ").trim().slice(0, 6000);
 }
 
 /* ---------- public API ---------- */
@@ -285,7 +285,7 @@ export async function generateSearchReport(query, results, onChunk) {
     userMsg += `URL: ${r.url}\n`;
     userMsg += `Snippet: ${r.snippet}\n`;
     if (r.content) {
-      userMsg += `Seiteninhalt (Auszug): ${r.content.slice(0, 2000)}\n`;
+      userMsg += `Seiteninhalt (Auszug): ${r.content.slice(0, 4000)}\n`;
     }
     if (r.reasoning) {
       userMsg += `Relevanz-Grund: ${r.reasoning}\n`;
