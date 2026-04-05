@@ -232,6 +232,7 @@ async function classifyBatchWithWorker(workerUrl, apiKey, articles) {
       { role: "user", content: userMessage },
     ],
     temperature: 0.3,
+    max_tokens: 16384,
   };
 
   const maxRetries = 3;
@@ -244,7 +245,8 @@ async function classifyBatchWithWorker(workerUrl, apiKey, articles) {
       console.log(`[Classify] Worker ${workerUrl}: API call successful`);
       
       const msg = data.choices[0]?.message;
-      const content = (msg?.content || msg?.reasoning_content || "").trim();
+      // Use content only — reasoning_content is the model's thinking, not the answer
+      const content = (msg?.content || "").trim();
       
       if (!content) {
         throw new Error("Empty response from API");

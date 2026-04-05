@@ -142,7 +142,7 @@ async function scoreBatch(apiKey, query, items) {
         { role: "user", content: userMsg },
       ],
       temperature: 0.2,
-      max_tokens: 4096,
+      max_tokens: 16384,
     }),
   });
 
