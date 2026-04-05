@@ -29,8 +29,7 @@
 
 import { getActiveSources as getActiveSourcesFromStore, updateSource } from "../stores/sourceStore.js";
 import { getProxyUrl } from "../config/settings.js";
-import { saveArticles, articleExists, deleteArticlesOlderThan } from "../stores/articleStore.js";
-import { getAutoCleanupSettings } from "../stores/settingsStore.js";
+import { saveArticles, clearArticles } from "../stores/articleStore.js";
 import { hashString } from "../utils/hash.js";
 
 const FETCH_TIMEOUT = 10000; // 10 seconds
@@ -46,6 +45,9 @@ export async function fetchAllFeeds() {
     skipped: 0,
     errors: [],
   };
+
+  // Clear all existing articles before fetching fresh ones
+  await clearArticles();
 
   // Fetch all feeds in parallel
   const fetchPromises = sources.map(async (source) => {
@@ -82,17 +84,9 @@ export async function fetchAllFeeds() {
         continue;
       }
 
-      // Deduplicate and count
-      for (const article of articles) {
-        const exists = await articleExists(article.id);
-        if (exists) {
-          results.skipped++;
-        } else {
-          results.newCount++;
-        }
-      }
+      results.newCount += articles.length;
 
-      // Save new articles
+      // Save articles
       if (articles.length > 0) {
         await saveArticles(articles);
       }
@@ -102,20 +96,6 @@ export async function fetchAllFeeds() {
         error: result.reason?.message || "Unknown error",
       });
     }
-  }
-
-  // Run auto-cleanup if enabled
-  try {
-    const cleanupSettings = await getAutoCleanupSettings();
-    if (cleanupSettings.enabled && cleanupSettings.days > 0) {
-      const deletedCount = await deleteArticlesOlderThan(cleanupSettings.days);
-      if (deletedCount > 0) {
-        results.cleanup = { deleted: deletedCount };
-      }
-    }
-  } catch (cleanupError) {
-    // Cleanup errors are non-critical
-    console.warn("Auto-cleanup failed:", cleanupError);
   }
 
   return results;
