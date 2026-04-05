@@ -7,7 +7,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { initDB, getAllArticles, getUnclassifiedArticles, updateArticle } from "./stores/articleStore.js";
 import { fetchAllFeeds } from "./services/feedService.js";
-import { classifyNew } from "./services/classifyService.js";
+import { classifyNew, deepClassify } from "./services/classifyService.js";
 import { matchNewArticles } from "./services/matchService.js";
 import { clusterArticles } from "./services/clusterService.js";
 import { getNvidiaApiKey } from "./stores/settingsStore.js";
@@ -124,12 +124,23 @@ function App() {
     setClassifyProgress({ current: 0, total: unclassifiedCount });
 
     try {
-      // Real progress callback from parallel workers
+      // Pass 1: Quick classify from RSS snippets
       const result = await classifyNew((progress) => {
         setClassifyProgress(progress);
       });
       
-      setClassifyResult(result);
+      // Pass 2: Deep classify high-scoring articles with full text
+      setClassifyProgress({ current: 0, total: 0 }); // reset before deep pass
+      const deepResult = await deepClassify((progress) => {
+        setClassifyProgress({ current: progress.current, total: progress.total, phase: "deep" });
+      });
+      
+      setClassifyResult({
+        ...result,
+        deepClassified: deepResult.deepClassified,
+        deepFailed: deepResult.failed,
+        deepSkipped: deepResult.skipped,
+      });
       await loadArticles();
     } catch (error) {
       setClassifyResult({
@@ -211,8 +222,21 @@ function App() {
       setClassifyLoading(true);
       setClassifyProgress({ current: 0, total: unclassified.length });
       try {
+        // Pass 1: Quick classify from RSS snippets
         const cResult = await classifyNew((progress) => setClassifyProgress(progress));
-        setClassifyResult(cResult);
+        
+        // Pass 2: Deep classify high-scoring articles with full text
+        setClassifyProgress({ current: 0, total: 0 });
+        const deepResult = await deepClassify((progress) => {
+          setClassifyProgress({ current: progress.current, total: progress.total, phase: "deep" });
+        });
+        
+        setClassifyResult({
+          ...cResult,
+          deepClassified: deepResult.deepClassified,
+          deepFailed: deepResult.failed,
+          deepSkipped: deepResult.skipped,
+        });
         await loadArticles();
       } catch (error) {
         setClassifyResult({ classified: 0, failed: unclassified.length, errors: [error.message] });
@@ -640,7 +664,9 @@ function App() {
               className="px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
             >
               {classifyLoading
-                ? `Klassifiziere... (${classifyProgress.current}/${classifyProgress.total})`
+                ? classifyProgress.phase === "deep"
+                  ? `Tiefenanalyse... (${classifyProgress.current}/${classifyProgress.total})`
+                  : `Klassifiziere... (${classifyProgress.current}/${classifyProgress.total})`
                 : `Klassifizieren (${unclassifiedCount})`}
             </button>
 
@@ -733,6 +759,9 @@ function App() {
           <div className="mb-4 p-4 bg-white rounded-lg shadow border-l-4 border-purple-500">
             <div className="text-sm text-gray-700">
               <span className="font-medium">{classifyResult.classified}</span> klassifiziert
+              {classifyResult.deepClassified > 0 && (
+                <>, <span className="font-medium text-indigo-600">{classifyResult.deepClassified} tiefenanalysiert</span></>
+              )}
               {classifyResult.failed > 0 && (
                 <>, <span className="font-medium text-red-600">{classifyResult.failed} fehlgeschlagen</span></>
               )}

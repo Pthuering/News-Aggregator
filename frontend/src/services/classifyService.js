@@ -12,7 +12,7 @@
 import { getClassifyPrompt } from "../config/prompts.js";
 import { API_CONFIG, CLASSIFY_CONFIG } from "../config/settings.js";
 import { getNvidiaApiKey } from "../stores/settingsStore.js";
-import { getUnclassifiedArticles, updateArticle } from "../stores/articleStore.js";
+import { getUnclassifiedArticles, getAllArticles, updateArticle } from "../stores/articleStore.js";
 import { normalizeKeywords } from "../utils/keywordUtils.js";
 
 // 4 Worker-URLs für parallele Verarbeitung
@@ -532,7 +532,217 @@ function validateAndFormatResults(results, expectedCount) {
   });
 }
 
+/**
+ * Deep classification threshold – articles with any score >= this get full-text re-classification
+ */
+const DEEP_CLASSIFY_THRESHOLD = 5;
+
+/**
+ * Fetch full article text from URL via CORS proxy
+ */
+async function fetchArticleFullText(articleUrl, workerUrl) {
+  const proxyUrl = `${workerUrl}?url=${encodeURIComponent(articleUrl)}`;
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 15000);
+
+  try {
+    const response = await fetch(proxyUrl, {
+      signal: controller.signal,
+      headers: { Accept: "text/html, */*" },
+    });
+    clearTimeout(timeoutId);
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+
+    const html = await response.text();
+    return extractTextFromHtml(html);
+  } catch (error) {
+    clearTimeout(timeoutId);
+    if (error.name === "AbortError") {
+      throw new Error("Timeout fetching article");
+    }
+    throw error;
+  }
+}
+
+/**
+ * Extract readable text from HTML, focusing on article content
+ */
+function extractTextFromHtml(html) {
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(html, "text/html");
+
+  // Remove non-content elements
+  const removeTags = ["script", "style", "nav", "footer", "header", "aside", "iframe", "noscript", "svg", "form"];
+  removeTags.forEach(tag => {
+    doc.querySelectorAll(tag).forEach(el => el.remove());
+  });
+
+  // Remove common non-content classes/ids
+  const removeSelectors = [
+    "[class*='cookie']", "[class*='banner']", "[class*='popup']",
+    "[class*='sidebar']", "[class*='comment']", "[class*='share']",
+    "[class*='social']", "[class*='newsletter']", "[class*='advert']",
+    "[class*='widget']", "[class*='related']", "[class*='recommend']",
+    "[id*='cookie']", "[id*='banner']", "[id*='popup']",
+    "[id*='sidebar']", "[id*='comment']", "[id*='share']",
+  ];
+  removeSelectors.forEach(sel => {
+    try { doc.querySelectorAll(sel).forEach(el => el.remove()); } catch {}
+  });
+
+  // Try to find article content first (common article containers)
+  const articleSelectors = [
+    "article", "[role='main']", "main",
+    ".post-content", ".article-content", ".entry-content",
+    ".article-body", ".story-body", ".content-body",
+    ".article__body", ".post__content",
+  ];
+
+  for (const sel of articleSelectors) {
+    const el = doc.querySelector(sel);
+    if (el && el.textContent.trim().length > 200) {
+      return cleanExtractedText(el.textContent);
+    }
+  }
+
+  // Fallback: use body
+  const body = doc.querySelector("body");
+  return body ? cleanExtractedText(body.textContent) : "";
+}
+
+/**
+ * Clean extracted text: collapse whitespace, remove boilerplate
+ */
+function cleanExtractedText(text) {
+  let cleaned = text
+    .replace(/\s+/g, " ")
+    .replace(/\n\s*\n/g, "\n")
+    .trim();
+
+  // Truncate to a generous limit for full-text analysis
+  if (cleaned.length > 12000) {
+    cleaned = cleaned.substring(0, 12000) + "...";
+  }
+
+  return cleaned;
+}
+
+/**
+ * Get max score across all 4 lenses
+ */
+function getMaxScore(scores) {
+  if (!scores) return 0;
+  return Math.max(
+    scores.oepnv_direkt || 0,
+    scores.tech_transfer || 0,
+    scores.foerder || 0,
+    scores.markt || 0
+  );
+}
+
+/**
+ * Second-pass deep classification: fetches full article content for high-scoring articles
+ * and re-classifies them with the complete text.
+ * Only processes articles where any score >= DEEP_CLASSIFY_THRESHOLD from the first pass.
+ */
+export async function deepClassify(onProgress) {
+  const apiKey = await getNvidiaApiKey();
+  if (!apiKey) {
+    throw new Error("NVIDIA API key not configured.");
+  }
+
+  // Find articles that passed the first-pass threshold
+  const allArticles = await getAllArticles();
+  const candidates = allArticles.filter(a =>
+    a.scores && getMaxScore(a.scores) >= DEEP_CLASSIFY_THRESHOLD && !a.deepClassifiedAt
+  );
+
+  console.log(`[DeepClassify] Found ${candidates.length} articles with max score >= ${DEEP_CLASSIFY_THRESHOLD}`);
+
+  if (candidates.length === 0) {
+    return { deepClassified: 0, failed: 0, skipped: 0, errors: [] };
+  }
+
+  const results = [];
+
+  // Process articles one-by-one (each needs its own full-text fetch)
+  for (let i = 0; i < candidates.length; i++) {
+    const article = candidates[i];
+    const workerUrl = WORKER_URLS[i % WORKER_URLS.length];
+
+    if (onProgress) {
+      onProgress({ current: i, total: candidates.length });
+    }
+
+    // Step 1: Fetch full article text
+    let fullText;
+    try {
+      console.log(`[DeepClassify] ${i + 1}/${candidates.length} Fetching: ${article.url}`);
+      fullText = await fetchArticleFullText(article.url, workerUrl);
+    } catch (fetchError) {
+      console.warn(`[DeepClassify] Failed to fetch ${article.url}: ${fetchError.message}`);
+      results.push({ success: false, articleId: article.id, error: `Fetch failed: ${fetchError.message}` });
+      await new Promise(r => setTimeout(r, 500));
+      continue;
+    }
+
+    if (!fullText || fullText.length < 100) {
+      console.warn(`[DeepClassify] Insufficient content from ${article.url} (${fullText?.length || 0} chars)`);
+      results.push({ success: false, articleId: article.id, error: "Insufficient full-text content" });
+      continue;
+    }
+
+    console.log(`[DeepClassify] Got ${fullText.length} chars for "${article.title.substring(0, 50)}..."`);
+
+    // Step 2: Re-classify with full text
+    try {
+      // Build a single-article object with full content
+      const enrichedArticle = { ...article, content: fullText };
+      const batchResults = await classifyBatchWithWorker(workerUrl, apiKey, [enrichedArticle]);
+
+      if (batchResults[0]) {
+        await updateArticle(article.id, {
+          content: fullText,
+          scores: batchResults[0].scores,
+          tags: normalizeKeywords(batchResults[0].tags),
+          summary_de: batchResults[0].summary_de,
+          reasoning: batchResults[0].reasoning,
+          deadline: batchResults[0].deadline || null,
+          classifiedAt: new Date().toISOString(),
+          deepClassifiedAt: new Date().toISOString(),
+        });
+        console.log(`[DeepClassify] Re-classified: ${JSON.stringify(batchResults[0].scores)}`);
+        results.push({ success: true, articleId: article.id });
+      } else {
+        results.push({ success: false, articleId: article.id, error: "No result from re-classification" });
+      }
+    } catch (classifyError) {
+      console.error(`[DeepClassify] Classification failed for ${article.id}: ${classifyError.message}`);
+      results.push({ success: false, articleId: article.id, error: classifyError.message });
+    }
+
+    // Pause between articles to respect rate limits
+    if (i < candidates.length - 1) {
+      await new Promise(r => setTimeout(r, 2000));
+    }
+  }
+
+  if (onProgress) {
+    onProgress({ current: candidates.length, total: candidates.length });
+  }
+
+  const deepClassified = results.filter(r => r.success).length;
+  const failed = results.filter(r => !r.success).length;
+  const errors = results.filter(r => !r.success && r.error).map(r => r.error);
+
+  return { deepClassified, failed, skipped: allArticles.length - candidates.length, errors };
+}
+
 export default {
   classifyNew,
   classifySingle,
+  deepClassify,
 };
