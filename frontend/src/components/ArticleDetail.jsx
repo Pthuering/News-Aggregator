@@ -211,6 +211,28 @@ function ArticleDetail({ article, onClose, onUpdate }) {
               </div>
             )}
 
+            {/* Enrichment / Mehr Kontext - zwischen Bewertung und Zusammenfassung */}
+            <div className="mt-4 p-3 bg-indigo-50 rounded-lg border border-indigo-200">
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={handleEnrich}
+                  disabled={enrichLoading}
+                  className="px-3 py-1.5 text-sm bg-indigo-600 text-white rounded-md hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors whitespace-nowrap"
+                >
+                  {enrichLoading ? "Wird geladen…" : enrichment ? "Kontext aktualisieren" : "🔍 Mehr Kontext"}
+                </button>
+                {!enrichment && !enrichLoading && (
+                  <span className="text-xs text-indigo-400">Hintergrund-Infos zu Unternehmen, Technologien & Abkürzungen</span>
+                )}
+              </div>
+              {enrichError && (
+                <div className="text-sm text-red-600 mt-2">Fehler: {enrichError}</div>
+              )}
+              {enrichment && (
+                <div className="mt-2 text-sm text-gray-700 prose prose-sm max-w-none" dangerouslySetInnerHTML={{ __html: renderMarkdown(enrichment) }} />
+              )}
+            </div>
+
             {article.summary_de && (
               <div className="mt-3 text-sm text-gray-600">
                 <strong>Zusammenfassung:</strong> {article.summary_de}
@@ -218,28 +240,6 @@ function ArticleDetail({ article, onClose, onUpdate }) {
             )}
           </div>
         )}
-
-        {/* Enrichment / Mehr Kontext */}
-        <div className="p-4 bg-indigo-50 rounded-lg border border-indigo-200">
-          <div className="flex items-center justify-between mb-2">
-            <h3 className="font-semibold text-indigo-800">Kontext & Hintergrund</h3>
-            <button
-              onClick={handleEnrich}
-              disabled={enrichLoading}
-              className="px-3 py-1.5 text-sm bg-indigo-600 text-white rounded-md hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-            >
-              {enrichLoading ? "Wird geladen…" : enrichment ? "Kontext aktualisieren" : "Mehr Kontext"}
-            </button>
-          </div>
-          {enrichError && (
-            <div className="text-sm text-red-600 mb-2">Fehler: {enrichError}</div>
-          )}
-          {enrichment ? (
-            <div className="text-sm text-gray-700 prose prose-sm max-w-none" dangerouslySetInnerHTML={{ __html: renderMarkdown(enrichment) }} />
-          ) : (
-            <p className="text-sm text-indigo-400 italic">Klicke "Mehr Kontext" um Hintergrund-Infos zu Unternehmen, Technologien und Abkürzungen zu erhalten.</p>
-          )}
-        </div>
 
         {/* Article content */}
         <div className="prose max-w-none">
