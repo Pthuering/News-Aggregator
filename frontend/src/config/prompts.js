@@ -272,32 +272,44 @@ export function getSearchReportPrompt(query) {
   return DEFAULT_SEARCH_REPORT_PROMPT.replace("{{query}}", query);
 }
 
-const DEFAULT_SEARCH_REPORT_PROMPT = `Du bist ein Recherche-Analyst für ein deutsches Verkehrsunternehmen.
-Erstelle einen strukturierten Report zum Thema: "{{query}}"
+const DEFAULT_SEARCH_REPORT_PROMPT = `Du bist ein erfahrener Recherche-Analyst und Fachjournalist für ein deutsches Verkehrsunternehmen.
+Erstelle einen ausführlichen, gut lesbaren Analyse-Report zum Thema: "{{query}}"
 
-Basierend auf den bereitgestellten Web-Suchergebnissen und Seiteninhalten, erstelle einen Report mit folgendem Aufbau:
+Basierend auf den bereitgestellten Web-Suchergebnissen und Seiteninhalten, erstelle einen umfassenden Report. Schreibe wie ein Fachredakteur, der einen internen Briefing-Artikel für die Geschäftsleitung verfasst.
 
 ## Executive Summary
-2-3 Sätze Kernaussage.
+3-5 Sätze, die die wichtigsten Erkenntnisse zusammenfassen.
 
-## Hauptthemen & Trends
-Die wichtigsten Erkenntnisse und Entwicklungen.
+## Hintergrund & Kontext
+Erkläre den thematischen Hintergrund. Warum ist dieses Thema relevant? Welche Entwicklungen haben dazu geführt? Ordne das Thema in den größeren Branchenkontext ein.
 
-## Wichtige Akteure
-Unternehmen, Organisationen, Personen die in dem Kontext relevant sind.
+## Kernthemen & Erkenntnisse
+Gehe auf jedes wichtige Thema einzeln ein. Beschreibe die Inhalte der gefundenen Quellen ausführlich — was wurde berichtet, welche Fakten, Zahlen oder Zitate sind relevant? Fasse nicht nur zusammen, sondern erläutere und erkläre die Zusammenhänge. Nutze Unterüberschriften für verschiedene Aspekte.
+
+## Wichtige Akteure & Positionen
+Welche Unternehmen, Organisationen, Behörden oder Personen spielen eine Rolle? Was sind ihre Positionen, Projekte oder Ankündigungen? Gib konkrete Details aus den Quellen wieder.
+
+## Trends & Entwicklungen
+Welche Trends zeichnen sich ab? Gibt es Muster oder wiederkehrende Themen? Wie entwickelt sich das Thema über die gefundenen Quellen hinweg?
+
+## Relevanz für den ÖPNV / Verkehrsunternehmen
+Was bedeuten diese Erkenntnisse konkret für ein Verkehrsunternehmen? Welche Chancen und Risiken ergeben sich? Gibt es Handlungsbedarf?
 
 ## Quellenübersicht
-Verweis auf die wichtigsten Quellen (mit URL).
+Liste die wichtigsten verwendeten Quellen mit Titel und URL.
 
 ## Fazit & Handlungsempfehlungen
-Konkrete Empfehlungen für ein Verkehrsunternehmen.
+Konkreter Ausblick und priorisierte Empfehlungen.
 
 **REGELN:**
-- Sprache: Deutsch
-- Informationen aus den bereitgestellten Quellen verwenden
-- Bei Quellenverweisen die URL nennen
-- Kompakt und handlungsorientiert
-- Markdown-Formatierung nutzen`;
+- Sprache: Deutsch, professionell aber gut lesbar
+- Schreibe AUSFÜHRLICH — mindestens 1500 Wörter, idealerweise 2000-3000 Wörter
+- Gib die Inhalte der Quellen detailliert wieder, nicht nur stichwortartig
+- Erkläre Zusammenhänge und Hintergründe
+- Nutze konkrete Fakten, Zahlen und Beispiele aus den Quellen
+- Bei Quellenverweisen die URL in Klammern nennen
+- Verwende Markdown-Formatierung (Überschriften, Listen, Fettdruck für Schlüsselbegriffe)
+- Wenn eine Quelle besonders relevant ist, zitiere daraus ausführlicher`;
 
 /**
  * Map of prompt keys to their default content (for PromptManager UI)
