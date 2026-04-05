@@ -27,7 +27,7 @@
  *   - Einzelne Feed-Fehler stoppen NICHT den Gesamtprozess
  */
 
-import { getActiveSources } from "../config/sources.js";
+import { getActiveSources as getActiveSourcesFromStore, updateSource } from "../stores/sourceStore.js";
 import { getProxyUrl } from "../config/settings.js";
 import { saveArticles, articleExists, deleteArticlesOlderThan } from "../stores/articleStore.js";
 import { getAutoCleanupSettings } from "../stores/settingsStore.js";
@@ -40,7 +40,7 @@ const FETCH_TIMEOUT = 10000; // 10 seconds
  * @returns {Promise<{newCount: number, skipped: number, errors: Array}>}
  */
 export async function fetchAllFeeds() {
-  const sources = getActiveSources();
+  const sources = await getActiveSourcesFromStore();
   const results = {
     newCount: 0,
     skipped: 0,
@@ -51,8 +51,18 @@ export async function fetchAllFeeds() {
   const fetchPromises = sources.map(async (source) => {
     try {
       const articles = await fetchSingleFeed(source);
+      // Update source tracking
+      await updateSource(source.id, {
+        lastFetched: new Date().toISOString(),
+        lastError: null,
+        articleCount: articles.length,
+      });
       return { source, articles, error: null };
     } catch (error) {
+      // Track error on the source
+      await updateSource(source.id, {
+        lastError: error.message,
+      }).catch(() => {});
       return { source, articles: [], error };
     }
   });

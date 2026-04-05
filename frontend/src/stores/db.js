@@ -6,6 +6,7 @@
  * @writes   IndexedDB → erstellt/migriert Object-Stores
  * @calledBy stores/articleStore.js → getDB()
  * @calledBy stores/projectStore.js → getDB()
+ * @calledBy stores/sourceStore.js → getDB()
  *
  * @exports
  *   getDB(): Promise<IDBPDatabase> – gibt die initialisierte DB zurück
@@ -14,7 +15,7 @@
 import { openDB } from "idb";
 
 const DB_NAME = "trend-radar";
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 
 let dbPromise = null;
 
@@ -39,6 +40,13 @@ export function getDB() {
         // v2 → projects store
         if (!db.objectStoreNames.contains("projects")) {
           db.createObjectStore("projects", { keyPath: "id" });
+        }
+
+        // v3 → sources store
+        if (!db.objectStoreNames.contains("sources")) {
+          const store = db.createObjectStore("sources", { keyPath: "id" });
+          store.createIndex("category", "category", { unique: false });
+          store.createIndex("active", "active", { unique: false });
         }
       },
     });

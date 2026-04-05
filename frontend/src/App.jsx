@@ -20,6 +20,8 @@ import ProjectManager from "./components/ProjectManager.jsx";
 import KeywordOverview from "./components/KeywordOverview.jsx";
 import Dashboard from "./components/Dashboard.jsx";
 import DataManager from "./components/DataManager.jsx";
+import FeedManager from "./components/FeedManager.jsx";
+import { initSources } from "./stores/sourceStore.js";
 
 function App() {
   const [articles, setArticles] = useState([]);
@@ -52,6 +54,7 @@ function App() {
 
   const initApp = async () => {
     await initDB();
+    await initSources();
     await loadArticles();
     await checkApiKey();
     await loadProjectCount();
@@ -523,6 +526,7 @@ function App() {
                   { id: "articles", label: "Artikel" },
                   { id: "projects", label: "Projekte" },
                   { id: "keywords", label: "Keywords" },
+                  { id: "sources", label: "Quellen" },
                   { id: "data", label: "Daten" },
                 ].map((tab) => (
                   <button
@@ -582,6 +586,11 @@ function App() {
             articles={articles}
             onArticleClick={handleArticleClick}
           />
+        )}
+
+        {/* === SOURCES TAB === */}
+        {activeTab === "sources" && (
+          <FeedManager />
         )}
 
         {/* === DATA TAB === */}
