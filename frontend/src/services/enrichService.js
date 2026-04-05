@@ -47,6 +47,9 @@ export async function enrichArticle(article) {
     temperature: 0.3,
   };
 
+  console.log(`[Enrich] Calling API for article: "${article.title.substring(0, 50)}..."`);
+  console.log(`[Enrich] Content length: ${userMessage.length} chars`);
+
   const response = await fetch(`${WORKER_URL}/api/nvidia`, {
     method: "POST",
     headers: {
@@ -58,10 +61,12 @@ export async function enrichArticle(article) {
 
   if (!response.ok) {
     const errorText = await response.text();
+    console.error(`[Enrich] API error ${response.status}:`, errorText);
     throw new Error(`API Error ${response.status}: ${errorText}`);
   }
 
   const data = await response.json();
+  console.log(`[Enrich] API response:`, JSON.stringify(data).substring(0, 500));
   const enrichment = data.choices?.[0]?.message?.content?.trim();
 
   if (!enrichment) {
