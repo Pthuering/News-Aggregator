@@ -541,9 +541,20 @@ function tryParseJson(content) {
     return JSON.parse(cleanContent);
   } else if (cleanContent.startsWith("{")) {
     return [JSON.parse(cleanContent)];
-  } else {
-    throw new Error("Invalid JSON format - doesn't start with [ or {");
   }
+
+  // Content has surrounding text (e.g. reasoning_content with thinking)
+  // Try to extract JSON array or object
+  const arrMatch = cleanContent.match(/\[\s*\{[\s\S]*\}\s*\]/);
+  if (arrMatch) {
+    return JSON.parse(arrMatch[0]);
+  }
+  const objMatch = cleanContent.match(/\{[\s\S]*?\}/);
+  if (objMatch) {
+    return [JSON.parse(objMatch[0])];
+  }
+
+  throw new Error("Invalid JSON format - no JSON found in response");
 }
 
 /**
