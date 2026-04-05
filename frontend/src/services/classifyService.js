@@ -23,8 +23,6 @@ const WORKER_URLS = [
   "https://rss-proxy-4.philipp-thuering.workers.dev",
 ];
 
-const PARALLEL_WORKERS = 4;
-
 /**
  * Make API call via specific worker
  */
@@ -53,24 +51,7 @@ async function callNvidiaApiViaWorker(workerUrl, apiKey, body) {
 }
 
 /**
- * Split array into N chunks
- */
-function splitIntoChunks(array, numChunks) {
-  const chunks = [];
-  const chunkSize = Math.ceil(array.length / numChunks);
-  for (let i = 0; i < numChunks; i++) {
-    const start = i * chunkSize;
-    const end = start + chunkSize;
-    const chunk = array.slice(start, end);
-    if (chunk.length > 0) {
-      chunks.push(chunk);
-    }
-  }
-  return chunks;
-}
-
-/**
- * Classify all unclassified articles using parallel workers
+ * Classify all unclassified articles using sequential batches
  */
 export async function classifyNew(onProgress) {
   const apiKey = await getNvidiaApiKey();
@@ -85,127 +66,95 @@ export async function classifyNew(onProgress) {
     return { classified: 0, failed: 0, errors: [] };
   }
 
-  // Show article lengths for debugging
-  articles.forEach((a, i) => {
-    console.log(`[Classify] Article ${i + 1}: "${a.title.substring(0, 50)}..." - Content length: ${a.content.length} chars`);
-  });
-
-  // Split articles into chunks for parallel processing
-  const chunks = splitIntoChunks(articles, PARALLEL_WORKERS);
-  console.log(`[Classify] Split into ${chunks.length} chunks for ${PARALLEL_WORKERS} workers`);
-  chunks.forEach((chunk, i) => {
-    console.log(`[Classify] Chunk ${i + 1}: ${chunk.length} articles`);
-  });
-  
   const totalArticles = articles.length;
-  let processedCount = 0;
-  
-  // Track progress per worker
-  const progressPerWorker = new Array(chunks.length).fill(0);
+  const batchSize = CLASSIFY_CONFIG.batchSize;
+  const results = [];
 
-  const updateProgress = (workerIndex, count) => {
-    progressPerWorker[workerIndex] = count;
-    const totalProcessed = progressPerWorker.reduce((a, b) => a + b, 0);
-    if (onProgress) {
-      onProgress({ current: totalProcessed, total: totalArticles });
-    }
-  };
+  // Build batches
+  const batches = [];
+  for (let i = 0; i < articles.length; i += batchSize) {
+    batches.push(articles.slice(i, i + batchSize));
+  }
+  console.log(`[Classify] Processing ${batches.length} batches sequentially (batch size ${batchSize})`);
 
-  // Process chunks in parallel
-  const workerPromises = chunks.map(async (chunk, workerIndex) => {
-    const workerUrl = WORKER_URLS[workerIndex % WORKER_URLS.length];
-    const results = [];
-    
-    // Further split chunk into batches of 5
-    const batchSize = CLASSIFY_CONFIG.batchSize;
-    const batches = [];
-    for (let i = 0; i < chunk.length; i += batchSize) {
-      batches.push(chunk.slice(i, i + batchSize));
-    }
+  // Process batches sequentially, rotating through workers
+  for (let i = 0; i < batches.length; i++) {
+    const batch = batches[i];
+    const workerUrl = WORKER_URLS[i % WORKER_URLS.length];
+    console.log(`[Classify] Batch ${i + 1}/${batches.length} → ${workerUrl}`);
 
-    for (let i = 0; i < batches.length; i++) {
-      const batch = batches[i];
-      
-      try {
-        const batchResults = await classifyBatchWithWorker(workerUrl, apiKey, batch);
-        
-        // Update each article
-        for (let j = 0; j < batch.length; j++) {
-          const article = batch[j];
-          const result = batchResults[j];
+    try {
+      const batchResults = await classifyBatchWithWorker(workerUrl, apiKey, batch);
 
-          if (result) {
-            await updateArticle(article.id, {
-              scores: result.scores,
-              tags: normalizeKeywords(result.tags),
-              summary_de: result.summary_de,
-              reasoning: result.reasoning,
-              deadline: result.deadline || null,
-              classifiedAt: new Date().toISOString(),
-            });
-            results.push({ success: true, articleId: article.id });
-          } else {
-            results.push({ success: false, articleId: article.id, error: "No result" });
-          }
-        }
-        
-        updateProgress(workerIndex, (i + 1) * batch.length);
-      } catch (error) {
-        const isTokenError = error.message?.includes("token") || 
-                            error.message?.includes("too long") || 
-                            error.message?.includes("context length");
-        
-        // If token error and batch has multiple articles, try individually
-        if (isTokenError && batch.length > 1) {
-          console.log(`[Classify] Token error on batch, trying ${batch.length} articles individually`);
-          
-          for (const article of batch) {
-            try {
-              const singleResults = await classifyBatchWithWorker(workerUrl, apiKey, [article]);
-              if (singleResults[0]) {
-                await updateArticle(article.id, {
-                  scores: singleResults[0].scores,
-                  tags: normalizeKeywords(singleResults[0].tags),
-                  summary_de: singleResults[0].summary_de,
-                  reasoning: singleResults[0].reasoning,
-                  deadline: singleResults[0].deadline || null,
-                  classifiedAt: new Date().toISOString(),
-                });
-                results.push({ success: true, articleId: article.id });
-              } else {
-                results.push({ success: false, articleId: article.id, error: "No result" });
-              }
-            } catch (singleError) {
-              console.error(`[Classify] Individual article failed:`, article.id, singleError.message);
-              results.push({ success: false, articleId: article.id, error: singleError.message });
-            }
-          }
+      for (let j = 0; j < batch.length; j++) {
+        const article = batch[j];
+        const result = batchResults[j];
+
+        if (result) {
+          await updateArticle(article.id, {
+            scores: result.scores,
+            tags: normalizeKeywords(result.tags),
+            summary_de: result.summary_de,
+            reasoning: result.reasoning,
+            deadline: result.deadline || null,
+            classifiedAt: new Date().toISOString(),
+          });
+          results.push({ success: true, articleId: article.id });
         } else {
-          // Mark all articles in failed batch as failed
-          for (const article of batch) {
-            results.push({ success: false, articleId: article.id, error: error.message });
-          }
+          results.push({ success: false, articleId: article.id, error: "No result" });
         }
-        updateProgress(workerIndex, (i + 1) * batch.length);
       }
+    } catch (error) {
+      const isTokenError = error.message?.includes("token") ||
+                          error.message?.includes("too long") ||
+                          error.message?.includes("context length");
 
-      // Small pause between batches to be nice to the API
-      if (i < batches.length - 1) {
-        await new Promise((resolve) => setTimeout(resolve, 500));
+      if (isTokenError && batch.length > 1) {
+        console.log(`[Classify] Token error on batch, trying ${batch.length} articles individually`);
+        for (const article of batch) {
+          try {
+            const singleResults = await classifyBatchWithWorker(workerUrl, apiKey, [article]);
+            if (singleResults[0]) {
+              await updateArticle(article.id, {
+                scores: singleResults[0].scores,
+                tags: normalizeKeywords(singleResults[0].tags),
+                summary_de: singleResults[0].summary_de,
+                reasoning: singleResults[0].reasoning,
+                deadline: singleResults[0].deadline || null,
+                classifiedAt: new Date().toISOString(),
+              });
+              results.push({ success: true, articleId: article.id });
+            } else {
+              results.push({ success: false, articleId: article.id, error: "No result" });
+            }
+          } catch (singleError) {
+            console.error(`[Classify] Individual article failed:`, article.id, singleError.message);
+            results.push({ success: false, articleId: article.id, error: singleError.message });
+          }
+          // Pause between individual retries
+          await new Promise((resolve) => setTimeout(resolve, 1000));
+        }
+      } else {
+        for (const article of batch) {
+          results.push({ success: false, articleId: article.id, error: error.message });
+        }
       }
     }
-    
-    return results;
-  });
 
-  // Wait for all workers to complete
-  const allResults = await Promise.all(workerPromises);
-  
-  // Flatten results
-  const flatResults = allResults.flat();
-  const classified = flatResults.filter(r => r.success).length;
-  const failed = flatResults.filter(r => !r.success).length;
-  const errors = flatResults
+    // Update progress after each batch
+    if (onProgress) {
+      onProgress({ current: Math.min((i + 1) * batchSize, totalArticles), total: totalArticles });
+    }
+
+    // Pause between batches to respect rate limits
+    if (i < batches.length - 1) {
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+    }
+  }
+
+  const classified = results.filter(r => r.success).length;
+  const failed = results.filter(r => !r.success).length;
+  const errors = results
     .filter(r => !r.success && r.error)
     .map(r => r.error);
 
