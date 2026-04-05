@@ -45,6 +45,7 @@ export async function enrichArticle(article) {
       { role: "user", content: userMessage },
     ],
     temperature: 0.3,
+    max_tokens: 16384,
   };
 
   console.log(`[Enrich] Calling API for article: "${article.title.substring(0, 50)}..."`);
@@ -67,7 +68,8 @@ export async function enrichArticle(article) {
 
   const data = await response.json();
   console.log(`[Enrich] API response:`, JSON.stringify(data).substring(0, 500));
-  const enrichment = data.choices?.[0]?.message?.content?.trim();
+  const msg = data.choices?.[0]?.message;
+  const enrichment = (msg?.content || msg?.reasoning_content || "").trim();
 
   if (!enrichment) {
     throw new Error("Empty response from API");
