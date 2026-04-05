@@ -243,7 +243,8 @@ async function classifyBatchWithWorker(workerUrl, apiKey, articles) {
       const data = await callNvidiaApiViaWorker(workerUrl, apiKey, body);
       console.log(`[Classify] Worker ${workerUrl}: API call successful`);
       
-      const content = data.choices[0]?.message?.content;
+      const msg = data.choices[0]?.message;
+      const content = (msg?.content || msg?.reasoning_content || "").trim();
       
       if (!content) {
         throw new Error("Empty response from API");

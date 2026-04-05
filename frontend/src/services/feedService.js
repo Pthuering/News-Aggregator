@@ -130,6 +130,13 @@ export async function fetchSingleFeed(source) {
     }
 
     const xmlText = await response.text();
+
+    // Detect non-XML responses (e.g. HTML error pages from proxy)
+    const trimmed = xmlText.trimStart();
+    if (trimmed.startsWith("<!DOCTYPE") || trimmed.startsWith("<html")) {
+      throw new Error(`Feed returned HTML instead of XML (${source.url})`);
+    }
+
     return parseFeed(xmlText, source);
   } catch (error) {
     clearTimeout(timeoutId);
