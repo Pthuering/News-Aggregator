@@ -55,6 +55,9 @@ export const INITIAL_FILTERS = {
   
   // Synergy filter
   synergiesOnly: false,
+
+  // Cluster filter (set from Dashboard navigation)
+  clusterId: null,
   
   // Sorting
   sortBy: "newest", // "newest" | "oldest" | "relevance" | "score_oepnv" | "score_tech"
@@ -139,6 +142,7 @@ function FilterBar({ filters = INITIAL_FILTERS, onFilterChange, availableTags = 
       filters.classifiedOnly ||
       filters.bookmarkedOnly ||
       filters.synergiesOnly ||
+      filters.clusterId ||
       filters.project !== "all" ||
       Object.values(filters.scores || {}).some(
         (s) => s.min > 0 || s.max < 10
@@ -156,6 +160,7 @@ function FilterBar({ filters = INITIAL_FILTERS, onFilterChange, availableTags = 
     if (filters.classifiedOnly) count++;
     if (filters.bookmarkedOnly) count++;
     if (filters.synergiesOnly) count++;
+    if (filters.clusterId) count++;
     if (filters.project !== "all") count++;
     if (Object.values(filters.scores || {}).some((s) => s.min > 0 || s.max < 10)) count++;
     return count;
@@ -163,6 +168,18 @@ function FilterBar({ filters = INITIAL_FILTERS, onFilterChange, availableTags = 
 
   return (
     <div className={`bg-white border border-gray-200 rounded-lg ${className}`}>
+      {/* Cluster filter banner */}
+      {filters.clusterId && (
+        <div className="flex items-center justify-between px-4 py-2 bg-amber-50 border-b border-amber-200 rounded-t-lg">
+          <span className="text-sm text-amber-800 font-medium">Gefiltert nach Cluster</span>
+          <button
+            onClick={() => onFilterChange({ ...filters, clusterId: null })}
+            className="text-sm text-amber-700 hover:text-amber-900 font-medium underline"
+          >
+            Filter aufheben
+          </button>
+        </div>
+      )}
       {/* Basic filters - always visible */}
       <div className="p-4 space-y-4">
         <div className="flex flex-wrap gap-3">
