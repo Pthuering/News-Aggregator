@@ -29,7 +29,8 @@
 
 import { getActiveSources } from "../config/sources.js";
 import { getProxyUrl } from "../config/settings.js";
-import { saveArticles, articleExists } from "../stores/articleStore.js";
+import { saveArticles, articleExists, deleteArticlesOlderThan } from "../stores/articleStore.js";
+import { getAutoCleanupSettings } from "../stores/settingsStore.js";
 import { hashString } from "../utils/hash.js";
 
 const FETCH_TIMEOUT = 10000; // 10 seconds
@@ -91,6 +92,20 @@ export async function fetchAllFeeds() {
         error: result.reason?.message || "Unknown error",
       });
     }
+  }
+
+  // Run auto-cleanup if enabled
+  try {
+    const cleanupSettings = await getAutoCleanupSettings();
+    if (cleanupSettings.enabled && cleanupSettings.days > 0) {
+      const deletedCount = await deleteArticlesOlderThan(cleanupSettings.days);
+      if (deletedCount > 0) {
+        results.cleanup = { deleted: deletedCount };
+      }
+    }
+  } catch (cleanupError) {
+    // Cleanup errors are non-critical
+    console.warn("Auto-cleanup failed:", cleanupError);
   }
 
   return results;

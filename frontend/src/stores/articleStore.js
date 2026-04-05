@@ -246,6 +246,57 @@ export async function clearArticles() {
   await db.clear(STORE_NAME);
 }
 
+/**
+ * Delete articles by filter criteria
+ * @param {string[]} articleIds - Array of article IDs to delete
+ * @returns {Promise<number>} - Number of articles deleted
+ */
+export async function deleteArticlesByFilter(articleIds) {
+  const db = await getDB();
+  const tx = db.transaction(STORE_NAME, "readwrite");
+  const store = tx.objectStore(STORE_NAME);
+
+  let deletedCount = 0;
+  for (const id of articleIds) {
+    await store.delete(id);
+    deletedCount++;
+  }
+
+  await tx.done;
+  return deletedCount;
+}
+
+/**
+ * Delete articles older than specified days (excluding bookmarked)
+ * @param {number} days - Number of days
+ * @returns {Promise<number>} - Number of articles deleted
+ */
+export async function deleteArticlesOlderThan(days) {
+  const db = await getDB();
+  const all = await db.getAll(STORE_NAME);
+  
+  const cutoffDate = new Date();
+  cutoffDate.setDate(cutoffDate.getDate() - days);
+  
+  const toDelete = all.filter(a => {
+    // Never delete bookmarked articles
+    if (a.bookmarked) return false;
+    return new Date(a.published) < cutoffDate;
+  });
+
+  if (toDelete.length === 0) return 0;
+
+  const tx = db.transaction(STORE_NAME, "readwrite");
+  const store = tx.objectStore(STORE_NAME);
+
+  for (const article of toDelete) {
+    await store.delete(article.id);
+  }
+
+  await tx.done;
+  return toDelete.length;
+}
+
 export default {
   initDB,
   saveArticles,
@@ -258,4 +309,6 @@ export default {
   exportAll,
   importAll,
   clearArticles,
+  deleteArticlesByFilter,
+  deleteArticlesOlderThan,
 };

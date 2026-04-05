@@ -118,11 +118,42 @@ export async function initDefaultProjects() {
   }
 }
 
+/**
+ * Import projects from backup (replaces existing)
+ * @param {ProjectConfig[]} projects - Projects to import
+ * @returns {Promise<void>}
+ */
+export async function importProjects(projects) {
+  const db = await getDB();
+  const tx = db.transaction(STORE_NAME, "readwrite");
+  const store = tx.objectStore(STORE_NAME);
+
+  // Clear existing
+  await store.clear();
+
+  // Import all
+  for (const project of projects) {
+    await store.put(project);
+  }
+
+  await tx.done;
+}
+
+/**
+ * Get all projects (alias for getProjects)
+ * @returns {Promise<ProjectConfig[]>}
+ */
+export async function getAllProjects() {
+  return getProjects();
+}
+
 export default {
   getProjects,
+  getAllProjects,
   saveProject,
   deleteProject,
   getProjectsAsContext,
   initDefaultProjects,
+  importProjects,
   defaultProjects,
 };

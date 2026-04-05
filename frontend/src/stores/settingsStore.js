@@ -21,6 +21,7 @@
 
 const STORAGE_KEY_API = "tr_apiKey";
 const STORAGE_KEY_FILTERS = "tr_filterDefaults";
+const STORAGE_KEY_AUTO_CLEANUP = "tr_autoCleanup";
 
 // Default filter criteria
 const defaultFilterCriteria = {
@@ -127,6 +128,30 @@ export async function setNvidiaApiKey(apiKey) {
   setApiKey(apiKey);
 }
 
+/**
+ * Get auto cleanup settings
+ * @returns {Promise<{enabled: boolean, days: number}>}
+ */
+export async function getAutoCleanupSettings() {
+  const stored = localStorage.getItem(STORAGE_KEY_AUTO_CLEANUP);
+  if (stored) {
+    try {
+      return JSON.parse(stored);
+    } catch (e) {
+      return { enabled: false, days: 90 };
+    }
+  }
+  return { enabled: false, days: 90 };
+}
+
+/**
+ * Set auto cleanup settings
+ * @param {{enabled: boolean, days: number}} settings
+ */
+export async function setAutoCleanupSettings(settings) {
+  localStorage.setItem(STORAGE_KEY_AUTO_CLEANUP, JSON.stringify(settings));
+}
+
 export default {
   getApiKey,
   setApiKey,
@@ -141,4 +166,7 @@ export default {
   hasNvidiaApiKey,
   getNvidiaApiKey,
   setNvidiaApiKey,
+  // Auto cleanup
+  getAutoCleanupSettings,
+  setAutoCleanupSettings,
 };

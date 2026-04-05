@@ -19,6 +19,7 @@ import ReportGenerator from "./components/ReportGenerator.jsx";
 import ProjectManager from "./components/ProjectManager.jsx";
 import KeywordOverview from "./components/KeywordOverview.jsx";
 import Dashboard from "./components/Dashboard.jsx";
+import DataManager from "./components/DataManager.jsx";
 
 function App() {
   const [articles, setArticles] = useState([]);
@@ -35,7 +36,7 @@ function App() {
   const [selectedArticle, setSelectedArticle] = useState(null);
   const [selectedArticleIds, setSelectedArticleIds] = useState([]);
   const [showReportGenerator, setShowReportGenerator] = useState(false);
-  const [activeTab, setActiveTab] = useState("articles"); // "articles" | "projects" | "keywords"
+  const [activeTab, setActiveTab] = useState("articles"); // "articles" | "projects" | "keywords" | "data"
   const [matchLoading, setMatchLoading] = useState(false);
   const [matchProgress, setMatchProgress] = useState({ current: 0, total: 0, skipped: 0 });
   const [matchResult, setMatchResult] = useState(null);
@@ -522,6 +523,7 @@ function App() {
                   { id: "articles", label: "Artikel" },
                   { id: "projects", label: "Projekte" },
                   { id: "keywords", label: "Keywords" },
+                  { id: "data", label: "Daten" },
                 ].map((tab) => (
                   <button
                     key={tab.id}
@@ -579,6 +581,13 @@ function App() {
           <KeywordOverview
             articles={articles}
             onArticleClick={handleArticleClick}
+          />
+        )}
+
+        {/* === DATA TAB === */}
+        {activeTab === "data" && (
+          <DataManager
+            onDataChange={loadArticles}
           />
         )}
 
