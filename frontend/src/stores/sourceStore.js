@@ -25,17 +25,37 @@ const STORE_NAME = "sources";
 const MIGRATED_KEY = "tr_sourcesMigrated";
 
 /**
- * Initialize sources – migrate defaults on first run
+ * Initialize sources – migrate defaults on first run, add missing defaults on updates
  */
 export async function initSources() {
-  const migrated = localStorage.getItem(MIGRATED_KEY);
-  if (migrated) return;
-
   const db = await getDB();
-  const count = await db.count(STORE_NAME);
-  if (count === 0) {
+  const migrated = localStorage.getItem(MIGRATED_KEY);
+
+  if (!migrated) {
+    // First run: seed all defaults if store is empty
+    const count = await db.count(STORE_NAME);
+    if (count === 0) {
+      const tx = db.transaction(STORE_NAME, "readwrite");
+      for (const src of defaultSources) {
+        await tx.store.put({
+          ...src,
+          lastFetched: null,
+          lastError: null,
+          articleCount: 0,
+          createdAt: new Date().toISOString(),
+        });
+      }
+      await tx.done;
+    }
+  }
+
+  // Always add missing defaults (handles new sources added after initial migration)
+  const existing = await db.getAll(STORE_NAME);
+  const existingIds = new Set(existing.map((s) => s.id));
+  const missing = defaultSources.filter((s) => !existingIds.has(s.id));
+  if (missing.length > 0) {
     const tx = db.transaction(STORE_NAME, "readwrite");
-    for (const src of defaultSources) {
+    for (const src of missing) {
       await tx.store.put({
         ...src,
         lastFetched: null,
@@ -46,6 +66,7 @@ export async function initSources() {
     }
     await tx.done;
   }
+
   localStorage.setItem(MIGRATED_KEY, "1");
 }
 
