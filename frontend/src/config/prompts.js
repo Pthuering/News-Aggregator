@@ -246,9 +246,71 @@ Wenn keine erklärungsbedürftigen Entities vorhanden sind, antworte mit "Keine 
 - Sprache: Deutsch`;
 }
 
+/**
+ * Returns the system prompt for search relevance scoring.
+ * The model evaluates how relevant each article is to the user's search query.
+ */
+export function getSearchRelevancePrompt() {
+  return `Du bist ein Recherche-Assistent für ein deutsches Verkehrsunternehmen.
+Dir wird eine Suchanfrage und eine Liste von Artikeln gegeben.
+Bewerte für jeden Artikel, wie relevant er für die Suchanfrage ist.
+
+**BEWERTUNG:**
+- relevance: 0-10 (0 = kein Bezug, 10 = exakt passend)
+- reasoning: 1 Satz warum relevant/irrelevant
+
+**REGELN:**
+- Berücksichtige semantische Ähnlichkeit, nicht nur Keyword-Matching
+- Kontext und implizite Verbindungen beachten (z.B. "E-Bus" ist relevant für "Elektromobilität ÖPNV")
+- Score 0-3: kaum relevant, 4-6: teilweise relevant, 7-10: sehr relevant
+
+**FORMAT:**
+Antworte NUR mit validem JSON (kein Markdown):
+[
+  { "articleIndex": 0, "relevance": 8, "reasoning": "..." },
+  { "articleIndex": 1, "relevance": 2, "reasoning": "..." }
+]`;
+}
+
+/**
+ * Returns the system prompt for generating a search report.
+ * @param {string} query - The user's search query
+ */
+export function getSearchReportPrompt(query) {
+  return `Du bist ein Recherche-Analyst für ein deutsches Verkehrsunternehmen.
+Erstelle einen strukturierten Report zum Thema: "${query}"
+
+Basierend auf den bereitgestellten Artikeln, erstelle einen Report mit folgendem Aufbau:
+
+## Executive Summary
+2-3 Sätze Kernaussage.
+
+## Hauptthemen & Trends
+Die wichtigsten Erkenntnisse und Entwicklungen.
+
+## Wichtige Akteure
+Unternehmen, Organisationen, Personen die in dem Kontext relevant sind.
+
+## Zeitliche Entwicklung
+Chronologische Einordnung der Informationen (falls erkennbar).
+
+## Fazit & Handlungsempfehlungen
+Konkrete Empfehlungen für ein Verkehrsunternehmen.
+
+**REGELN:**
+- Sprache: Deutsch
+- Nur Informationen aus den bereitgestellten Artikeln verwenden
+- Bei Quellenverweisen den Artikeltitel in Klammern nennen
+- Kompakt und handlungsorientiert
+- Wenn wenig Material vorhanden, Abschnitte entsprechend kürzen
+- Markdown-Formatierung nutzen`;
+}
+
 export default {
   getClassifyPrompt,
   getMatchPrompt,
   getReportPrompt,
   getEnrichPrompt,
+  getSearchRelevancePrompt,
+  getSearchReportPrompt,
 };

@@ -21,6 +21,7 @@ import KeywordOverview from "./components/KeywordOverview.jsx";
 import Dashboard from "./components/Dashboard.jsx";
 import DataManager from "./components/DataManager.jsx";
 import FeedManager from "./components/FeedManager.jsx";
+import OpenSearch from "./components/OpenSearch.jsx";
 import { initSources } from "./stores/sourceStore.js";
 
 function App() {
@@ -526,6 +527,7 @@ function App() {
                   { id: "articles", label: "Artikel" },
                   { id: "projects", label: "Projekte" },
                   { id: "keywords", label: "Keywords" },
+                  { id: "search", label: "Recherche" },
                   { id: "sources", label: "Quellen" },
                   { id: "data", label: "Daten" },
                 ].map((tab) => (
@@ -591,6 +593,11 @@ function App() {
         {/* === SOURCES TAB === */}
         {activeTab === "sources" && (
           <FeedManager />
+        )}
+
+        {/* === SEARCH TAB === */}
+        {activeTab === "search" && (
+          <OpenSearch onArticleClick={handleArticleClick} />
         )}
 
         {/* === DATA TAB === */}
