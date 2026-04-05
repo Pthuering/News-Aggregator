@@ -1,15 +1,15 @@
 /**
  * @module OpenSearch
- * @purpose KI-gestützte Themenrecherche mit Suchinterface, Ergebnisliste und Report
+ * @purpose Web-Recherche mit DuckDuckGo, Ergebnisliste und KI-Report
  *
- * @reads    services/searchService.js → searchArticles(), generateSearchReport()
+ * @reads    services/searchService.js → searchWeb(), generateSearchReport()
  * @calledBy App.jsx → Tab "Recherche"
  *
  * @exports  OpenSearch (React Component)
  */
 
 import { useState, useEffect, useRef } from "react";
-import { searchArticles, generateSearchReport } from "../services/searchService.js";
+import { searchWeb, scoreResults, generateSearchReport } from "../services/searchService.js";
 
 const STORAGE_KEY_HISTORY = "tr_searchHistory";
 const MAX_HISTORY = 20;
@@ -24,19 +24,19 @@ const EXAMPLE_QUERIES = [
 ];
 
 const DATE_OPTIONS = [
-  { value: null, label: "Alle Zeiträume" },
-  { value: 30, label: "Letzte 30 Tage" },
-  { value: 90, label: "Letzte 90 Tage" },
-  { value: 365, label: "Letztes Jahr" },
+  { value: "", label: "Beliebig" },
+  { value: "d", label: "Letzter Tag" },
+  { value: "w", label: "Letzte Woche" },
+  { value: "m", label: "Letzter Monat" },
+  { value: "y", label: "Letztes Jahr" },
 ];
 
-function OpenSearch({ onArticleClick }) {
+function OpenSearch() {
   const [query, setQuery] = useState("");
-  const [maxDays, setMaxDays] = useState(null);
-  const [minRelevance, setMinRelevance] = useState(4);
+  const [dateFilter, setDateFilter] = useState("");
   const [results, setResults] = useState(null);
   const [searching, setSearching] = useState(false);
-  const [searchProgress, setSearchProgress] = useState(null);
+  const [statusMsg, setStatusMsg] = useState(null);
   const [error, setError] = useState(null);
   const [history, setHistory] = useState([]);
   const [showHistory, setShowHistory] = useState(false);
@@ -46,6 +46,10 @@ function OpenSearch({ onArticleClick }) {
   const [reportLoading, setReportLoading] = useState(false);
   const [reportError, setReportError] = useState(null);
   const [activeView, setActiveView] = useState("results"); // "results" | "report"
+
+  // Scoring state
+  const [scoring, setScoring] = useState(false);
+  const [scored, setScored] = useState(false);
 
   const inputRef = useRef(null);
 
@@ -83,26 +87,47 @@ function OpenSearch({ onArticleClick }) {
     setReport(null);
     setReportError(null);
     setActiveView("results");
-    setSearchProgress(null);
+    setStatusMsg(null);
+    setScored(false);
     saveHistory(trimmed);
 
     try {
-      const res = await searchArticles(
+      const res = await searchWeb(
         trimmed,
-        { maxDays, minRelevance },
-        (current, total) => setSearchProgress({ current, total })
+        { dateFilter: dateFilter || null },
+        (msg) => setStatusMsg(msg)
       );
       setResults(res);
     } catch (err) {
       setError(err.message);
     } finally {
       setSearching(false);
-      setSearchProgress(null);
+      setStatusMsg(null);
     }
   };
 
   const handleKeyDown = (e) => {
     if (e.key === "Enter") handleSearch();
+  };
+
+  // --- Score results with LLM ---
+  const handleScore = async () => {
+    if (!results || results.length === 0) return;
+
+    setScoring(true);
+    setStatusMsg(null);
+    setError(null);
+
+    try {
+      const scoredResults = await scoreResults(query, results, (msg) => setStatusMsg(msg));
+      setResults(scoredResults);
+      setScored(true);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setScoring(false);
+      setStatusMsg(null);
+    }
   };
 
   // --- Report ---
@@ -144,6 +169,7 @@ function OpenSearch({ onArticleClick }) {
 
   // --- Relevance color ---
   const relevanceColor = (score) => {
+    if (score < 0) return "bg-gray-100 text-gray-500";
     if (score >= 8) return "bg-green-100 text-green-800";
     if (score >= 6) return "bg-blue-100 text-blue-800";
     if (score >= 4) return "bg-yellow-100 text-yellow-800";
@@ -229,7 +255,7 @@ function OpenSearch({ onArticleClick }) {
       <div className="bg-white rounded-lg shadow p-6">
         <h2 className="text-2xl font-bold text-gray-900 mb-4">KI-Recherche</h2>
         <p className="text-sm text-gray-500 mb-4">
-          Durchsuche alle gespeicherten Artikel mit KI-gestützter Relevanzbewertung und erstelle strukturierte Reports.
+          Durchsuche das Web mit DuckDuckGo und erstelle KI-gestützte Reports aus den gefundenen Quellen.
         </p>
 
         <div className="flex gap-2 mb-3">
@@ -285,26 +311,14 @@ function OpenSearch({ onArticleClick }) {
           <div className="flex items-center gap-2">
             <label className="text-sm text-gray-600">Zeitraum:</label>
             <select
-              value={maxDays ?? ""}
-              onChange={(e) => setMaxDays(e.target.value ? Number(e.target.value) : null)}
+              value={dateFilter}
+              onChange={(e) => setDateFilter(e.target.value)}
               className="px-2 py-1 text-sm border border-gray-300 rounded-md"
             >
               {DATE_OPTIONS.map((opt) => (
-                <option key={opt.label} value={opt.value ?? ""}>
+                <option key={opt.label} value={opt.value}>
                   {opt.label}
                 </option>
-              ))}
-            </select>
-          </div>
-          <div className="flex items-center gap-2">
-            <label className="text-sm text-gray-600">Min. Relevanz:</label>
-            <select
-              value={minRelevance}
-              onChange={(e) => setMinRelevance(Number(e.target.value))}
-              className="px-2 py-1 text-sm border border-gray-300 rounded-md"
-            >
-              {[1, 2, 3, 4, 5, 6, 7, 8].map((v) => (
-                <option key={v} value={v}>{v}/10</option>
               ))}
             </select>
           </div>
@@ -326,24 +340,14 @@ function OpenSearch({ onArticleClick }) {
       </div>
 
       {/* Progress */}
-      {searching && (
+      {(searching || scoring) && (
         <div className="bg-white rounded-lg shadow p-6">
           <div className="flex items-center gap-3">
             <span className="inline-block w-5 h-5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
             <span className="text-sm text-gray-600">
-              {searchProgress
-                ? `KI bewertet Artikel... (${searchProgress.current}/${searchProgress.total})`
-                : "Artikel werden durchsucht..."}
+              {statusMsg || (scoring ? "Ergebnisse werden bewertet…" : "Websuche wird durchgeführt…")}
             </span>
           </div>
-          {searchProgress && searchProgress.total > 0 && (
-            <div className="mt-3 w-full bg-gray-200 rounded-full h-2">
-              <div
-                className="bg-blue-600 h-2 rounded-full transition-all"
-                style={{ width: `${(searchProgress.current / searchProgress.total) * 100}%` }}
-              />
-            </div>
-          )}
         </div>
       )}
 
@@ -363,6 +367,7 @@ function OpenSearch({ onArticleClick }) {
               <div className="flex items-center gap-4">
                 <h3 className="font-semibold text-gray-900">
                   {results.length} Ergebnis{results.length !== 1 ? "se" : ""} für „{query}"
+                  {scored && <span className="text-xs text-green-600 ml-2">✓ bewertet</span>}
                 </h3>
                 {results.length > 0 && (
                   <div className="flex gap-1">
@@ -375,6 +380,21 @@ function OpenSearch({ onArticleClick }) {
                       }`}
                     >
                       Ergebnisse
+                    </button>
+                    <button
+                      onClick={() => {
+                        if (!scored && !scoring) handleScore();
+                      }}
+                      disabled={scoring || scored}
+                      className={`px-3 py-1 text-sm rounded-md transition-colors ${
+                        scored
+                          ? "bg-green-100 text-green-700 cursor-default"
+                          : scoring
+                            ? "bg-gray-200 text-gray-500 cursor-wait"
+                            : "bg-amber-100 text-amber-800 hover:bg-amber-200"
+                      }`}
+                    >
+                      {scoring ? "Bewertung…" : scored ? "✓ Bewertet" : "KI bewerten"}
                     </button>
                     <button
                       onClick={() => {
@@ -418,49 +438,45 @@ function OpenSearch({ onArticleClick }) {
             <>
               {results.length === 0 && (
                 <div className="bg-white rounded-lg shadow p-8 text-center text-gray-500">
-                  Keine relevanten Artikel gefunden. Versuche andere Suchbegriffe oder einen größeren Zeitraum.
+                  Keine Ergebnisse gefunden. Versuche andere Suchbegriffe.
                 </div>
               )}
               {results.map((r, idx) => (
-                <div
-                  key={r.article.id || idx}
-                  className="bg-white rounded-lg shadow p-4 hover:shadow-md transition-shadow cursor-pointer"
-                  onClick={() => onArticleClick && onArticleClick(r.article)}
+                <a
+                  key={idx}
+                  href={r.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="block bg-white rounded-lg shadow p-4 hover:shadow-md transition-shadow"
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1">
-                        <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${relevanceColor(r.relevance)}`}>
-                          {r.relevance}/10
-                        </span>
-                        <span className="text-xs text-gray-400">{r.article.source}</span>
-                        <span className="text-xs text-gray-400">
-                          {r.article.published?.split("T")[0] || ""}
+                        {scored && r.relevance != null && r.relevance >= 0 ? (
+                          <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${relevanceColor(r.relevance)}`}>
+                            {r.relevance}/10
+                          </span>
+                        ) : (
+                          <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-gray-100 text-gray-500">
+                            #{idx + 1}
+                          </span>
+                        )}
+                        <span className="text-xs text-gray-400 truncate">
+                          {(() => { try { return new URL(r.url).hostname; } catch { return r.url; } })()}
                         </span>
                       </div>
-                      <h4 className="font-medium text-gray-900 mb-1">{r.article.title}</h4>
+                      <h4 className="font-medium text-gray-900 mb-1 hover:text-blue-700">{r.title}</h4>
                       {r.reasoning && (
-                        <p className="text-sm text-gray-500 italic mb-1">
-                          {r.reasoning}
-                        </p>
+                        <p className="text-sm text-gray-500 italic mb-1">{r.reasoning}</p>
                       )}
-                      {r.article.summary_de && (
-                        <p className="text-sm text-gray-600 line-clamp-2">
-                          {r.article.summary_de}
-                        </p>
+                      {r.snippet && (
+                        <p className="text-sm text-gray-600 line-clamp-2">{r.snippet}</p>
                       )}
-                      {r.article.tags?.length > 0 && (
-                        <div className="flex gap-1 mt-2">
-                          {r.article.tags.slice(0, 5).map((tag) => (
-                            <span key={tag} className="px-2 py-0.5 text-xs bg-gray-100 text-gray-600 rounded-full">
-                              {tag}
-                            </span>
-                          ))}
-                        </div>
-                      )}
+                      <p className="text-xs text-blue-500 mt-1 truncate">{r.url}</p>
                     </div>
+                    <span className="text-gray-400 text-sm mt-1 flex-shrink-0">↗</span>
                   </div>
-                </div>
+                </a>
               ))}
             </>
           )}

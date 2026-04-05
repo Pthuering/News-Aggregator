@@ -1,80 +1,135 @@
 /**
  * @module searchService
- * @purpose KI-gestützte Themenrecherche über vorhandene Artikel
+ * @purpose Web-Recherche über DuckDuckGo + CORS Proxy + KI-Report
  *
- * @reads    stores/articleStore.js → getAllArticles()
  * @reads    stores/settingsStore.js → getNvidiaApiKey()
- * @reads    config/prompts.js → getSearchRelevancePrompt(), getSearchReportPrompt()
+ * @reads    config/prompts.js → getSearchReportPrompt()
  * @calledBy components/OpenSearch.jsx
  *
  * @exports
- *   searchArticles(query, options): Promise<SearchResult[]>
+ *   searchWeb(query, options, onProgress): Promise<WebResult[]>
  *   generateSearchReport(query, results, onChunk): Promise<string>
  */
 
-import { getAllArticles } from "../stores/articleStore.js";
 import { getNvidiaApiKey } from "../stores/settingsStore.js";
 import { getSearchRelevancePrompt, getSearchReportPrompt } from "../config/prompts.js";
 import { API_CONFIG } from "../config/settings.js";
 
-const WORKER_URL = "https://rss-proxy-1.philipp-thuering.workers.dev";
-const BATCH_SIZE = 3; // articles per LLM call for relevance scoring
+const PROXY_URLS = [
+  "https://rss-proxy-1.philipp-thuering.workers.dev",
+  "https://rss-proxy-2.philipp-thuering.workers.dev",
+  "https://rss-proxy-3.philipp-thuering.workers.dev",
+  "https://rss-proxy-4.philipp-thuering.workers.dev",
+];
 
-/**
- * Pre-filter articles by keyword overlap (cheap, no API call)
- */
-function preFilter(articles, query, maxDays) {
-  const terms = query.toLowerCase().split(/\s+/).filter((t) => t.length > 2);
-  let pool = articles;
+const DDG_BASE = "https://html.duckduckgo.com/html/";
+const MAX_SEARCH_RESULTS = 25;
+const MAX_PAGE_FETCH = 8;
+const SCORE_BATCH_SIZE = 5;
 
-  // Date filter
-  if (maxDays) {
-    const cutoff = new Date();
-    cutoff.setDate(cutoff.getDate() - maxDays);
-    pool = pool.filter((a) => new Date(a.published) >= cutoff);
-  }
+/* ---------- proxy helpers ---------- */
 
-  // Score each article by keyword overlap
-  return pool
-    .map((article) => {
-      const text = [
-        article.title || "",
-        article.summary_de || "",
-        article.description || "",
-        ...(article.tags || []),
-      ]
-        .join(" ")
-        .toLowerCase();
-
-      let hits = 0;
-      for (const term of terms) {
-        if (text.includes(term)) hits++;
-      }
-      return { article, hits };
-    })
-    .filter((r) => r.hits > 0)
-    .sort((a, b) => b.hits - a.hits)
-    .map((r) => r.article);
+let proxyIdx = 0;
+function nextProxy() {
+  return PROXY_URLS[proxyIdx++ % PROXY_URLS.length];
 }
 
-/**
- * Call NVIDIA API for relevance scoring of a batch
- */
-async function scoreBatch(apiKey, query, articles) {
-  const prompt = getSearchRelevancePrompt();
+async function proxyFetch(url, proxy) {
+  const p = proxy || nextProxy();
+  const resp = await fetch(`${p}/?url=${encodeURIComponent(url)}`);
+  if (!resp.ok) throw new Error(`Proxy ${resp.status}`);
+  return resp.text();
+}
 
-  const articleList = articles
+/* ---------- DuckDuckGo HTML parsing ---------- */
+
+function parseDDGResults(html) {
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(html, "text/html");
+  const results = [];
+
+  doc.querySelectorAll(".result").forEach((el) => {
+    const linkEl = el.querySelector(".result__a");
+    const snippetEl = el.querySelector(".result__snippet");
+    if (!linkEl) return;
+
+    let href = linkEl.getAttribute("href") || "";
+
+    // DDG redirect: //duckduckgo.com/l/?uddg=ENCODED_URL&rut=…
+    if (href.includes("uddg=")) {
+      const m = href.match(/[?&]uddg=([^&]+)/);
+      if (m) href = decodeURIComponent(m[1]);
+    }
+    if (!href.startsWith("http")) return;
+
+    results.push({
+      title: linkEl.textContent.trim(),
+      url: href,
+      snippet: snippetEl ? snippetEl.textContent.trim() : "",
+    });
+  });
+
+  return results.slice(0, MAX_SEARCH_RESULTS);
+}
+
+/* ---------- page content extraction ---------- */
+
+function extractPageContent(html) {
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(html, "text/html");
+
+  // Remove noise elements
+  const noise =
+    "script,style,nav,footer,header,aside,iframe,form,noscript,svg," +
+    ".cookie,.banner,.ad,.sidebar,.menu,.navigation,.comments,.social";
+  doc.querySelectorAll(noise).forEach((el) => el.remove());
+
+  const main = doc.querySelector(
+    "article, main, [role='main'], .article-body, .post-content, .entry-content, .content"
+  );
+  const text = (main || doc.body)?.textContent || "";
+  return text.replace(/\s+/g, " ").trim().slice(0, 3000);
+}
+
+/* ---------- public API ---------- */
+
+/**
+ * Search the web via DuckDuckGo (through CORS proxy)
+ * @param {string} query
+ * @param {object} options - { dateFilter: "d"|"w"|"m"|"y"|null }
+ * @param {function} onProgress - status string callback
+ * @returns {Promise<Array<{title, url, snippet}>>}
+ */
+export async function searchWeb(query, options = {}, onProgress) {
+  const { dateFilter = null } = options;
+
+  if (onProgress) onProgress("Websuche wird durchgeführt…");
+
+  const params = new URLSearchParams({ q: query, kl: "de-de" });
+  if (dateFilter) params.set("df", dateFilter);
+
+  const ddgUrl = `${DDG_BASE}?${params}`;
+  const html = await proxyFetch(ddgUrl);
+  const results = parseDDGResults(html);
+
+  if (onProgress) onProgress(`${results.length} Ergebnisse gefunden`);
+  return results;
+}
+
+/* ---------- LLM relevance scoring ---------- */
+
+async function scoreBatch(apiKey, query, items) {
+  const prompt = getSearchRelevancePrompt();
+  const list = items
     .map(
-      (a, i) =>
-        `[${i}] "${a.title}" (${a.source}, ${a.published?.split("T")[0] || "?"})${
-          a.summary_de ? "\n    " + a.summary_de.slice(0, 200) : ""
-        }`
+      (r, i) =>
+        `[${i}] "${r.title}"\n    URL: ${r.url}\n    ${(r.content || r.snippet || "").slice(0, 400)}`
     )
     .join("\n");
 
-  const userMsg = `Suchanfrage: "${query}"\n\nArtikel:\n${articleList}`;
+  const userMsg = `Suchanfrage: "${query}"\n\nErgebnisse:\n${list}`;
 
-  const response = await fetch(`${WORKER_URL}/api/nvidia`, {
+  const response = await fetch(`${nextProxy()}/api/nvidia`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -102,7 +157,6 @@ async function scoreBatch(apiKey, query, articles) {
     data.choices?.[0]?.message?.reasoning_content ||
     "";
 
-  // Extract JSON from potential markdown wrapper
   const jsonMatch = content.match(/\[[\s\S]*\]/);
   if (!jsonMatch) return [];
 
@@ -114,48 +168,53 @@ async function scoreBatch(apiKey, query, articles) {
 }
 
 /**
- * Search articles by query using keyword pre-filter + LLM relevance scoring
- * @param {string} query - Search query
- * @param {object} options - { maxDays, minRelevance }
- * @param {function} onProgress - Progress callback (current, total)
- * @returns {Promise<Array<{article, relevance, reasoning}>>}
+ * Score web results for relevance using LLM.
+ * Fetches page content first, then scores in batches.
+ * @param {string} query
+ * @param {Array<{title, url, snippet}>} results - raw DDG results
+ * @param {function} onProgress - (statusMsg: string) callback
+ * @returns {Promise<Array<{title, url, snippet, content, relevance, reasoning}>>}
  */
-export async function searchArticles(query, options = {}, onProgress) {
-  const { maxDays = null, minRelevance = 4 } = options;
-
+export async function scoreResults(query, results, onProgress) {
   const apiKey = await getNvidiaApiKey();
-  if (!apiKey) {
-    throw new Error("Kein API-Key vorhanden. Bitte in den Einstellungen hinterlegen.");
-  }
+  if (!apiKey) throw new Error("Kein API-Key vorhanden. Bitte in den Einstellungen hinterlegen.");
 
-  // 1. Get all articles and pre-filter by keyword
-  const allArticles = await getAllArticles();
-  const candidates = preFilter(allArticles, query, maxDays);
+  /* 1 — fetch page contents in parallel */
+  if (onProgress) onProgress("Seiteninhalte werden geladen…");
+  const toFetch = results.slice(0, MAX_PAGE_FETCH);
+  const settled = await Promise.allSettled(
+    toFetch.map((r) =>
+      proxyFetch(r.url)
+        .then((html) => ({ ...r, content: extractPageContent(html) }))
+        .catch(() => ({ ...r, content: "" }))
+    )
+  );
+  const enriched = settled
+    .filter((s) => s.status === "fulfilled")
+    .map((s) => s.value);
 
-  if (candidates.length === 0) {
-    return [];
-  }
+  // Add remaining results without content
+  const remaining = results.slice(MAX_PAGE_FETCH).map((r) => ({ ...r, content: "" }));
+  const all = [...enriched, ...remaining];
 
-  // Limit to top 30 candidates for API scoring
-  const toScore = candidates.slice(0, 30);
-  const results = [];
-
-  // 2. Score in batches via LLM
+  /* 2 — score in batches */
+  const scored = [];
   const batches = [];
-  for (let i = 0; i < toScore.length; i += BATCH_SIZE) {
-    batches.push(toScore.slice(i, i + BATCH_SIZE));
+  for (let i = 0; i < all.length; i += SCORE_BATCH_SIZE) {
+    batches.push(all.slice(i, i + SCORE_BATCH_SIZE));
   }
 
   for (let bi = 0; bi < batches.length; bi++) {
     const batch = batches[bi];
-    if (onProgress) onProgress(bi * BATCH_SIZE, toScore.length);
+    if (onProgress)
+      onProgress(`KI bewertet Ergebnisse… (${bi * SCORE_BATCH_SIZE + 1}–${Math.min((bi + 1) * SCORE_BATCH_SIZE, all.length)} / ${all.length})`);
 
     try {
       const scores = await scoreBatch(apiKey, query, batch);
       for (const s of scores) {
-        if (s.relevance >= minRelevance && batch[s.articleIndex]) {
-          results.push({
-            article: batch[s.articleIndex],
+        if (batch[s.articleIndex]) {
+          scored.push({
+            ...batch[s.articleIndex],
             relevance: s.relevance,
             reasoning: s.reasoning || "",
           });
@@ -163,51 +222,91 @@ export async function searchArticles(query, options = {}, onProgress) {
       }
     } catch (err) {
       console.warn(`Batch ${bi} scoring failed:`, err);
+      // Still include unscored items
+      for (const item of batch) {
+        if (!scored.some((s) => s.url === item.url)) {
+          scored.push({ ...item, relevance: -1, reasoning: "" });
+        }
+      }
     }
   }
 
-  if (onProgress) onProgress(toScore.length, toScore.length);
-
-  // 3. Sort by relevance descending
-  results.sort((a, b) => b.relevance - a.relevance);
-  return results;
+  scored.sort((a, b) => b.relevance - a.relevance);
+  return scored;
 }
 
 /**
- * Generate a structured report from search results (streaming)
- * @param {string} query - Original search query
- * @param {Array} results - Search results with articles
- * @param {function} onChunk - Streaming callback with accumulated text
- * @returns {Promise<string>} - Final markdown report
+ * Generate a structured report from web search results (streaming).
+ * Fetches page content for the top results before calling the LLM.
+ * @param {string} query
+ * @param {Array<{title, url, snippet}>} results
+ * @param {function} onChunk - streaming callback with accumulated text
+ * @returns {Promise<string>}
  */
 export async function generateSearchReport(query, results, onChunk) {
   const apiKey = await getNvidiaApiKey();
-  if (!apiKey) {
-    throw new Error("Kein API-Key vorhanden.");
+  if (!apiKey) throw new Error("Kein API-Key vorhanden.");
+
+  // If results already have content (from scoring), use directly;
+  // otherwise fetch page content now.
+  const hasContent = results.some((r) => r.content);
+  let enriched;
+  let remaining;
+
+  if (hasContent) {
+    enriched = results.slice(0, 20);
+    remaining = [];
+  } else {
+    const toFetch = results.slice(0, MAX_PAGE_FETCH);
+    if (onChunk) onChunk("_Seiteninhalte werden geladen…_\n");
+
+    const settled = await Promise.allSettled(
+      toFetch.map((r) =>
+        proxyFetch(r.url)
+          .then((html) => ({ ...r, content: extractPageContent(html) }))
+          .catch(() => ({ ...r, content: "" }))
+      )
+    );
+    enriched = settled
+      .filter((s) => s.status === "fulfilled")
+      .map((s) => s.value);
+    remaining = results.slice(MAX_PAGE_FETCH);
   }
 
-  const systemPrompt = getSearchReportPrompt(query);
+  /* build user message */
+  let userMsg = `Web-Recherche für: "${query}"\n`;
+  userMsg += `${results.length} Suchergebnisse insgesamt.\n\n`;
 
-  // Build context from top results
-  const topResults = results.slice(0, 20);
-  let userMsg = `Recherche-Ergebnis für: "${query}"\n\n`;
-  userMsg += `${topResults.length} relevante Artikel gefunden:\n\n`;
-
-  topResults.forEach((r, i) => {
-    userMsg += `--- Artikel ${i + 1} (Relevanz: ${r.relevance}/10) ---\n`;
-    userMsg += `Titel: ${r.article.title}\n`;
-    userMsg += `Quelle: ${r.article.source}\n`;
-    userMsg += `Datum: ${r.article.published?.split("T")[0] || "?"}\n`;
-    if (r.article.summary_de) {
-      userMsg += `Zusammenfassung: ${r.article.summary_de}\n`;
+  enriched.forEach((r, i) => {
+    userMsg += `--- Quelle ${i + 1}`;
+    if (r.relevance != null && r.relevance >= 0) userMsg += ` (Relevanz: ${r.relevance}/10)`;
+    userMsg += ` ---\n`;
+    userMsg += `Titel: ${r.title}\n`;
+    userMsg += `URL: ${r.url}\n`;
+    userMsg += `Snippet: ${r.snippet}\n`;
+    if (r.content) {
+      userMsg += `Seiteninhalt (Auszug): ${r.content.slice(0, 2000)}\n`;
     }
-    if (r.article.tags?.length) {
-      userMsg += `Tags: ${r.article.tags.join(", ")}\n`;
+    if (r.reasoning) {
+      userMsg += `Relevanz-Grund: ${r.reasoning}\n`;
     }
-    userMsg += `Relevanz-Grund: ${r.reasoning}\n\n`;
+    userMsg += "\n";
   });
 
-  const response = await fetch(`${WORKER_URL}/api/nvidia`, {
+  if (remaining.length > 0) {
+    userMsg += "\nWeitere Ergebnisse (nur Snippet):\n";
+    remaining.forEach((r, i) => {
+      userMsg += `${enriched.length + i + 1}. "${r.title}" – ${r.snippet}\n`;
+    });
+  }
+
+  /* 3 — stream report from LLM */
+  if (onChunk) onChunk("");
+
+  const systemPrompt = getSearchReportPrompt(query);
+  const proxy = nextProxy();
+
+  const response = await fetch(`${proxy}/api/nvidia`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -267,8 +366,10 @@ export async function generateSearchReport(query, results, onChunk) {
   if (!fullText) {
     try {
       const data = JSON.parse(buffer || "{}");
-      fullText = data.choices?.[0]?.message?.content || 
-                 data.choices?.[0]?.message?.reasoning_content || "";
+      fullText =
+        data.choices?.[0]?.message?.content ||
+        data.choices?.[0]?.message?.reasoning_content ||
+        "";
     } catch {
       // ignore
     }

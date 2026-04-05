@@ -2,25 +2,33 @@
  * @module prompts
  * @purpose System-Prompts für alle LLM-Calls (Klassifikation, Matching, Reports)
  *
- * @reads    nichts
- * @writes   nichts
- * @calledBy services/classifyService.js → getClassifyPrompt()
- * @calledBy services/matchService.js → getMatchPrompt() (Phase 5)
- * @calledBy services/reportService.js → getReportPrompt() (Phase 4)
+ * Custom overrides are stored via settingsStore. Each getter checks for a
+ * user-customized prompt first and falls back to the built-in default.
  *
  * @exports
- *   getClassifyPrompt(): string – System-Prompt für Multi-Lens-Klassifikation
- *   getMatchPrompt(projectsContext: string): string – (Platzhalter, Phase 5)
- *   getReportPrompt(config: ReportConfig): string – (Platzhalter, Phase 4)
+ *   getClassifyPrompt(): string
+ *   getMatchPrompt(projectsContext: string): string
+ *   getReportPrompt(config: ReportConfig): string
+ *   getEnrichPrompt(): string
+ *   getSearchRelevancePrompt(): string
+ *   getSearchReportPrompt(query: string): string
+ *   PROMPT_DEFAULTS: { [key]: () => string } – built-in defaults for PromptManager
  */
+
+import { getCustomPrompt } from "../stores/settingsStore.js";
 
 /**
  * Returns the system prompt for article classification via the four lenses.
- * The model evaluates articles through four different perspectives in a single call.
+ * Checks for custom override first.
  * @returns {string}
  */
 export function getClassifyPrompt() {
-  return `Du bist ein Analyst in der Digitalisierungsabteilung eines deutschen Verkehrsunternehmens. Deine Aufgabe ist es, Artikel durch vier Bewertungslinsen zu analysieren.
+  const custom = getCustomPrompt("classify");
+  if (custom) return custom.content;
+  return DEFAULT_CLASSIFY_PROMPT;
+}
+
+const DEFAULT_CLASSIFY_PROMPT = `Du bist ein Analyst in der Digitalisierungsabteilung eines deutschen Verkehrsunternehmens. Deine Aufgabe ist es, Artikel durch vier Bewertungslinsen zu analysieren.
 
 Bewerte den/die folgenden Artikel durch diese vier Linsen (Scores 0-10):
 
@@ -82,48 +90,20 @@ Bei ALLEN anderen Artikeln (keine Förderung/Ausschreibung, oder keine Frist erk
 }
 
 Bei mehreren Artikeln gib ein ARRAY [ {...}, {...} ] dieser Objekte zurück, in der gleichen Reihenfolge wie die Input-Artikel.`;
-}
 
 /**
  * Returns the system prompt for project synergy matching.
+ * Checks for custom override first.
  * @param {string} projectsContext - Formatted text of all active projects
  * @returns {string}
  */
 export function getMatchPrompt(projectsContext) {
-  return `Du bist ein Analyst bei einem deutschen Verkehrsunternehmen (ÖPNV).
-Deine Aufgabe ist es zu prüfen, ob die folgenden Artikel Synergien mit unseren internen Projekten aufweisen.
-
-**UNSERE PROJEKTE:**
-${projectsContext}
-
-**REGELN:**
-- Nur echte, begründbare Synergien melden
-- Score 0-10 (0=keine Synergie, 10=direkt anwendbar)
-- Nur Synergien mit Score >= 4 aufnehmen
-- relevance: 1-2 Sätze auf Deutsch, konkret und spezifisch
-- Wenn keine Synergien erkannt werden: leeres Array []
-- Wenn Keyword-Overlap mitgeliefert wird: als Hinweis nutzen, aber nicht blind übernehmen
-
-**WICHTIG - JSON FORMAT:**
-- NUR valides JSON zurückgeben, kein Markdown (keine \`\`\`json Blöcke!)
-- ALLE Strings in doppelten Anführungszeichen
-- Strikte JSON-Syntax
-
-**OUTPUT-FORMAT pro Artikel:**
-{
-  "articleIndex": 0,
-  "synergies": [
-    {
-      "projectId": "proj_xxx",
-      "projectName": "Projektname",
-      "score": 7,
-      "relevance": "Kurze Begründung der Synergie auf Deutsch."
-    }
-  ]
+  const custom = getCustomPrompt("match");
+  if (custom) return custom.content.replace("{{projectsContext}}", projectsContext);
+  return DEFAULT_MATCH_PROMPT.replace("{{projectsContext}}", projectsContext);
 }
 
-Bei mehreren Artikeln gib ein ARRAY [ {...}, {...} ] zurück in der gleichen Reihenfolge wie die Input-Artikel.`;
-}
+const DEFAULT_MATCH_PROMPT = "Du bist ein Analyst bei einem deutschen Verkehrsunternehmen (ÖPNV).\nDeine Aufgabe ist es zu prüfen, ob die folgenden Artikel Synergien mit unseren internen Projekten aufweisen.\n\n**UNSERE PROJEKTE:**\n{{projectsContext}}\n\n**REGELN:**\n- Nur echte, begründbare Synergien melden\n- Score 0-10 (0=keine Synergie, 10=direkt anwendbar)\n- Nur Synergien mit Score >= 4 aufnehmen\n- relevance: 1-2 Sätze auf Deutsch, konkret und spezifisch\n- Wenn keine Synergien erkannt werden: leeres Array []\n- Wenn Keyword-Overlap mitgeliefert wird: als Hinweis nutzen, aber nicht blind übernehmen\n\n**WICHTIG - JSON FORMAT:**\n- NUR valides JSON zurückgeben, kein Markdown (keine ```json Blöcke!)\n- ALLE Strings in doppelten Anführungszeichen\n- Strikte JSON-Syntax\n\n**OUTPUT-FORMAT pro Artikel:**\n{\n  \"articleIndex\": 0,\n  \"synergies\": [\n    {\n      \"projectId\": \"proj_xxx\",\n      \"projectName\": \"Projektname\",\n      \"score\": 7,\n      \"relevance\": \"Kurze Begründung der Synergie auf Deutsch.\"\n    }\n  ]\n}\n\nBei mehreren Artikeln gib ein ARRAY [ {...}, {...} ] zurück in der gleichen Reihenfolge wie die Input-Artikel.";
 
 /**
  * Returns the system prompt for report generation.
@@ -228,7 +208,12 @@ Wenn Eigene Notizen vorhanden sind, integriere sie als zusätzliche Perspektive.
  * @returns {string}
  */
 export function getEnrichPrompt() {
-  return `Du bist ein Analyst in der Digitalisierungsabteilung eines deutschen Verkehrsunternehmens.
+  const custom = getCustomPrompt("enrich");
+  if (custom) return custom.content;
+  return DEFAULT_ENRICH_PROMPT;
+}
+
+const DEFAULT_ENRICH_PROMPT = `Du bist ein Analyst in der Digitalisierungsabteilung eines deutschen Verkehrsunternehmens.
 Identifiziere unbekannte oder erklärungsbedürftige Unternehmen, Produkte, Technologien oder Abkürzungen im folgenden Artikel.
 Gib für jede Entity eine Kurzinfo in 1-2 Sätzen auf Deutsch.
 
@@ -244,16 +229,20 @@ Wenn keine erklärungsbedürftigen Entities vorhanden sind, antworte mit "Keine 
 - Fokus auf Firmen, Produkte, Standards, Technologien, Abkürzungen
 - Kompakt und informativ, maximal 10 Entities
 - Sprache: Deutsch`;
-}
 
 /**
  * Returns the system prompt for search relevance scoring.
- * The model evaluates how relevant each article is to the user's search query.
+ * Checks for custom override first.
  */
 export function getSearchRelevancePrompt() {
-  return `Du bist ein Recherche-Assistent für ein deutsches Verkehrsunternehmen.
-Dir wird eine Suchanfrage und eine Liste von Artikeln gegeben.
-Bewerte für jeden Artikel, wie relevant er für die Suchanfrage ist.
+  const custom = getCustomPrompt("searchRelevance");
+  if (custom) return custom.content;
+  return DEFAULT_SEARCH_RELEVANCE_PROMPT;
+}
+
+const DEFAULT_SEARCH_RELEVANCE_PROMPT = `Du bist ein Recherche-Assistent für ein deutsches Verkehrsunternehmen.
+Dir wird eine Suchanfrage und eine Liste von Web-Suchergebnissen gegeben.
+Bewerte für jedes Ergebnis, wie relevant es für die Suchanfrage ist.
 
 **BEWERTUNG:**
 - relevance: 0-10 (0 = kein Bezug, 10 = exakt passend)
@@ -262,6 +251,7 @@ Bewerte für jeden Artikel, wie relevant er für die Suchanfrage ist.
 **REGELN:**
 - Berücksichtige semantische Ähnlichkeit, nicht nur Keyword-Matching
 - Kontext und implizite Verbindungen beachten (z.B. "E-Bus" ist relevant für "Elektromobilität ÖPNV")
+- Bewerte anhand von Titel, Snippet und ggf. Seiteninhalt
 - Score 0-3: kaum relevant, 4-6: teilweise relevant, 7-10: sehr relevant
 
 **FORMAT:**
@@ -270,17 +260,22 @@ Antworte NUR mit validem JSON (kein Markdown):
   { "articleIndex": 0, "relevance": 8, "reasoning": "..." },
   { "articleIndex": 1, "relevance": 2, "reasoning": "..." }
 ]`;
-}
 
 /**
  * Returns the system prompt for generating a search report.
+ * Checks for custom override first.
  * @param {string} query - The user's search query
  */
 export function getSearchReportPrompt(query) {
-  return `Du bist ein Recherche-Analyst für ein deutsches Verkehrsunternehmen.
-Erstelle einen strukturierten Report zum Thema: "${query}"
+  const custom = getCustomPrompt("searchReport");
+  if (custom) return custom.content.replace("{{query}}", query);
+  return DEFAULT_SEARCH_REPORT_PROMPT.replace("{{query}}", query);
+}
 
-Basierend auf den bereitgestellten Artikeln, erstelle einen Report mit folgendem Aufbau:
+const DEFAULT_SEARCH_REPORT_PROMPT = `Du bist ein Recherche-Analyst für ein deutsches Verkehrsunternehmen.
+Erstelle einen strukturierten Report zum Thema: "{{query}}"
+
+Basierend auf den bereitgestellten Web-Suchergebnissen und Seiteninhalten, erstelle einen Report mit folgendem Aufbau:
 
 ## Executive Summary
 2-3 Sätze Kernaussage.
@@ -291,20 +286,29 @@ Die wichtigsten Erkenntnisse und Entwicklungen.
 ## Wichtige Akteure
 Unternehmen, Organisationen, Personen die in dem Kontext relevant sind.
 
-## Zeitliche Entwicklung
-Chronologische Einordnung der Informationen (falls erkennbar).
+## Quellenübersicht
+Verweis auf die wichtigsten Quellen (mit URL).
 
 ## Fazit & Handlungsempfehlungen
 Konkrete Empfehlungen für ein Verkehrsunternehmen.
 
 **REGELN:**
 - Sprache: Deutsch
-- Nur Informationen aus den bereitgestellten Artikeln verwenden
-- Bei Quellenverweisen den Artikeltitel in Klammern nennen
+- Informationen aus den bereitgestellten Quellen verwenden
+- Bei Quellenverweisen die URL nennen
 - Kompakt und handlungsorientiert
-- Wenn wenig Material vorhanden, Abschnitte entsprechend kürzen
 - Markdown-Formatierung nutzen`;
-}
+
+/**
+ * Map of prompt keys to their default content (for PromptManager UI)
+ */
+export const PROMPT_DEFAULTS = {
+  classify: { label: "Klassifikation", getDefault: () => DEFAULT_CLASSIFY_PROMPT },
+  match: { label: "Projekt-Matching", getDefault: () => DEFAULT_MATCH_PROMPT },
+  enrich: { label: "Artikel-Anreicherung", getDefault: () => DEFAULT_ENRICH_PROMPT },
+  searchRelevance: { label: "Such-Relevanz", getDefault: () => DEFAULT_SEARCH_RELEVANCE_PROMPT },
+  searchReport: { label: "Such-Report", getDefault: () => DEFAULT_SEARCH_REPORT_PROMPT },
+};
 
 export default {
   getClassifyPrompt,
@@ -313,4 +317,5 @@ export default {
   getEnrichPrompt,
   getSearchRelevancePrompt,
   getSearchReportPrompt,
+  PROMPT_DEFAULTS,
 };

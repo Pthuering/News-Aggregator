@@ -22,6 +22,7 @@
 const STORAGE_KEY_API = "tr_apiKey";
 const STORAGE_KEY_FILTERS = "tr_filterDefaults";
 const STORAGE_KEY_AUTO_CLEANUP = "tr_autoCleanup";
+const STORAGE_KEY_PROMPTS = "tr_prompts";
 
 // Default filter criteria
 const defaultFilterCriteria = {
@@ -152,6 +153,55 @@ export async function setAutoCleanupSettings(settings) {
   localStorage.setItem(STORAGE_KEY_AUTO_CLEANUP, JSON.stringify(settings));
 }
 
+// ─── Prompt Management ───
+
+/**
+ * Get all custom prompt overrides
+ * @returns {{ [key: string]: { content: string, updatedAt: string, version: number } }}
+ */
+export function getCustomPrompts() {
+  const stored = localStorage.getItem(STORAGE_KEY_PROMPTS);
+  if (stored) {
+    try { return JSON.parse(stored); } catch { return {}; }
+  }
+  return {};
+}
+
+/**
+ * Get a single custom prompt override (or null if default)
+ * @param {string} key - Prompt key (classify, match, report, enrich, searchRelevance, searchReport)
+ */
+export function getCustomPrompt(key) {
+  const all = getCustomPrompts();
+  return all[key] || null;
+}
+
+/**
+ * Save a custom prompt override
+ * @param {string} key
+ * @param {string} content
+ */
+export function setCustomPrompt(key, content) {
+  const all = getCustomPrompts();
+  const existing = all[key];
+  all[key] = {
+    content,
+    updatedAt: new Date().toISOString(),
+    version: (existing?.version || 0) + 1,
+  };
+  localStorage.setItem(STORAGE_KEY_PROMPTS, JSON.stringify(all));
+}
+
+/**
+ * Reset a prompt to default (remove override)
+ * @param {string} key
+ */
+export function resetCustomPrompt(key) {
+  const all = getCustomPrompts();
+  delete all[key];
+  localStorage.setItem(STORAGE_KEY_PROMPTS, JSON.stringify(all));
+}
+
 export default {
   getApiKey,
   setApiKey,
@@ -169,4 +219,9 @@ export default {
   // Auto cleanup
   getAutoCleanupSettings,
   setAutoCleanupSettings,
+  // Prompt management
+  getCustomPrompts,
+  getCustomPrompt,
+  setCustomPrompt,
+  resetCustomPrompt,
 };

@@ -22,6 +22,7 @@ import Dashboard from "./components/Dashboard.jsx";
 import DataManager from "./components/DataManager.jsx";
 import FeedManager from "./components/FeedManager.jsx";
 import OpenSearch from "./components/OpenSearch.jsx";
+import PromptManager from "./components/PromptManager.jsx";
 import { initSources } from "./stores/sourceStore.js";
 
 function App() {
@@ -529,6 +530,7 @@ function App() {
                   { id: "keywords", label: "Keywords" },
                   { id: "search", label: "Recherche" },
                   { id: "sources", label: "Quellen" },
+                  { id: "prompts", label: "Prompts" },
                   { id: "data", label: "Daten" },
                 ].map((tab) => (
                   <button
@@ -597,7 +599,7 @@ function App() {
 
         {/* === SEARCH TAB === */}
         {activeTab === "search" && (
-          <OpenSearch onArticleClick={handleArticleClick} />
+          <OpenSearch />
         )}
 
         {/* === DATA TAB === */}
@@ -605,6 +607,11 @@ function App() {
           <DataManager
             onDataChange={loadArticles}
           />
+        )}
+
+        {/* === PROMPTS TAB === */}
+        {activeTab === "prompts" && (
+          <PromptManager />
         )}
 
         {/* === ARTICLES TAB === */}
