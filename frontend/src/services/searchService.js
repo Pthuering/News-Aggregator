@@ -243,7 +243,7 @@ export async function scoreResults(query, results, onProgress) {
  * @param {function} onChunk - streaming callback with accumulated text
  * @returns {Promise<string>}
  */
-export async function generateSearchReport(query, results, onChunk) {
+export async function generateSearchReport(query, results, onChunk, extraContext) {
   const apiKey = await getNvidiaApiKey();
   if (!apiKey) throw new Error("Kein API-Key vorhanden.");
 
@@ -276,6 +276,10 @@ export async function generateSearchReport(query, results, onChunk) {
   /* build user message */
   let userMsg = `Web-Recherche für: "${query}"\n`;
   userMsg += `${results.length} Suchergebnisse insgesamt.\n\n`;
+
+  if (extraContext) {
+    userMsg += `ZUSÄTZLICHER KONTEXT / FOKUS:\n${extraContext}\n\n`;
+  }
 
   enriched.forEach((r, i) => {
     userMsg += `--- Quelle ${i + 1}`;
@@ -373,6 +377,103 @@ export async function generateSearchReport(query, results, onChunk) {
     } catch {
       // ignore
     }
+  }
+
+  if (!fullText) throw new Error("Keine Antwort von der API erhalten.");
+  return fullText.trim();
+}
+
+/**
+ * Generate a report from local classified articles (no web search).
+ * Used by quick-search buttons that analyze existing article data.
+ */
+export async function generateArticleSummaryReport(articles, prompt, onChunk) {
+  const apiKey = await getNvidiaApiKey();
+  if (!apiKey) throw new Error("Kein API-Key vorhanden.");
+
+  if (!articles || articles.length === 0) {
+    throw new Error("Keine Artikel vorhanden.");
+  }
+
+  let userMsg = `Analysiere die folgenden ${articles.length} Artikel aus meinem News-Aggregator:\n\n`;
+
+  articles.forEach((a, i) => {
+    userMsg += `--- Artikel ${i + 1} ---\n`;
+    userMsg += `Titel: ${a.title}\n`;
+    userMsg += `Quelle: ${a.source}\n`;
+    userMsg += `Datum: ${a.published}\n`;
+    if (a.summary_de) userMsg += `Zusammenfassung: ${a.summary_de}\n`;
+    if (a.scores) {
+      userMsg += `Scores: ÖPNV=${a.scores.oepnv_direkt}, Tech=${a.scores.tech_transfer}, Förder=${a.scores.foerder}, Markt=${a.scores.markt}\n`;
+    }
+    if (a.tags?.length > 0) userMsg += `Tags: ${a.tags.join(", ")}\n`;
+    if (a.content) userMsg += `Inhalt: ${a.content.substring(0, 3000)}\n`;
+    userMsg += "\n";
+  });
+
+  if (onChunk) onChunk("");
+
+  const proxy = nextProxy();
+  const response = await fetch(`${proxy}/api/nvidia`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model: API_CONFIG.model,
+      messages: [
+        { role: "system", content: prompt },
+        { role: "user", content: userMsg },
+      ],
+      temperature: 0.5,
+      max_tokens: 16384,
+      stream: true,
+    }),
+  });
+
+  if (!response.ok) {
+    const errText = await response.text();
+    throw new Error(`API Error ${response.status}: ${errText}`);
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let fullText = "";
+  let buffer = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop() || "";
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed || !trimmed.startsWith("data: ")) continue;
+      const data = trimmed.slice(6);
+      if (data === "[DONE]") continue;
+
+      try {
+        const parsed = JSON.parse(data);
+        const delta = parsed.choices?.[0]?.delta?.content;
+        if (delta) {
+          fullText += delta;
+          if (onChunk) onChunk(fullText);
+        }
+      } catch {
+        // skip
+      }
+    }
+  }
+
+  if (!fullText) {
+    try {
+      const data = JSON.parse(buffer || "{}");
+      fullText = data.choices?.[0]?.message?.content || "";
+    } catch { /* ignore */ }
   }
 
   if (!fullText) throw new Error("Keine Antwort von der API erhalten.");

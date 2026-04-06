@@ -9,10 +9,50 @@
  */
 
 import { useState, useEffect, useRef } from "react";
-import { searchWeb, scoreResults, generateSearchReport } from "../services/searchService.js";
+import { searchWeb, scoreResults, generateSearchReport, generateArticleSummaryReport } from "../services/searchService.js";
+import { getAllArticles } from "../stores/articleStore.js";
 
 const STORAGE_KEY_HISTORY = "tr_searchHistory";
+const STORAGE_KEY_QUICKSEARCH = "tr_quickSearchButtons";
 const MAX_HISTORY = 20;
+
+const DEFAULT_QUICK_SEARCHES = [
+  {
+    id: "ki-news",
+    label: "Was gibt es Neues zu KI?",
+    mode: "web",
+    searchQuery: "KI coding agents software development 2026",
+    prompt: "welche aktuellen lösungen und systemarchitekturen gibt es, um die bestehenden probleme von ki und coding agenten beim entwickeln von software zu beheben? führe eine deep research durch, suche nach den aktuellen vorreitern und gehe auch auf workflows ein, die open source zur verfügung stehen und wie diese insgesamt abschneiden, um so detaillierte daten wie möglich zu sammeln.",
+  },
+  {
+    id: "oepnv-news",
+    label: "Was gibt es Neues im ÖPNV?",
+    mode: "articles",
+    searchQuery: "",
+    prompt: `Du bist ein Analyst in der Digitalisierungsabteilung eines deutschen Verkehrsunternehmens. Erstelle einen umfassenden Lagebericht auf Deutsch basierend auf den bereitgestellten Artikeln.
+
+Struktur:
+## Überblick
+Kurze Zusammenfassung der wichtigsten Entwicklungen.
+
+## Top-Themen
+Die 3-5 wichtigsten Entwicklungen mit hoher Relevanz für den ÖPNV, jeweils mit Kontext und Einordnung.
+
+## Technologie & Innovation
+Neue Technologien, Pilotprojekte und Digitalisierungsfortschritte.
+
+## Förderlandschaft & Politik
+Aktuelle Förderprogramme, politische Signale und regulatorische Änderungen.
+
+## Markt & Wettbewerb
+Neue Marktteilnehmer, Funding-Runden, Partnerschaften und Produktlaunches.
+
+## Handlungsempfehlungen
+Konkrete Empfehlungen für ein deutsches Verkehrsunternehmen basierend auf den Erkenntnissen.
+
+Schreibe prägnant, faktenbasiert und mit konkreten Details aus den Artikeln. Nenne Quellen.`,
+  },
+];
 
 const EXAMPLE_QUERIES = [
   "E-Bus Ladeinfrastruktur",
@@ -53,13 +93,24 @@ function OpenSearch() {
 
   const inputRef = useRef(null);
 
-  // Load history on mount
+  // Quick-search button state
+  const [quickSearches, setQuickSearches] = useState([]);
+  const [editingQuickSearch, setEditingQuickSearch] = useState(null);
+  const [showQuickSearchEditor, setShowQuickSearchEditor] = useState(false);
+
+  // Load history and quick searches on mount
   useEffect(() => {
     try {
       const saved = JSON.parse(localStorage.getItem(STORAGE_KEY_HISTORY) || "[]");
       setHistory(saved);
     } catch {
       setHistory([]);
+    }
+    try {
+      const savedQS = JSON.parse(localStorage.getItem(STORAGE_KEY_QUICKSEARCH));
+      setQuickSearches(savedQS && savedQS.length > 0 ? savedQS : DEFAULT_QUICK_SEARCHES);
+    } catch {
+      setQuickSearches(DEFAULT_QUICK_SEARCHES);
     }
   }, []);
 
@@ -249,8 +300,183 @@ function OpenSearch() {
     });
   };
 
+  // --- Quick Search ---
+  const saveQuickSearches = (qs) => {
+    setQuickSearches(qs);
+    localStorage.setItem(STORAGE_KEY_QUICKSEARCH, JSON.stringify(qs));
+  };
+
+  const handleQuickSearch = async (qs) => {
+    if (searching || reportLoading) return;
+
+    if (qs.mode === "articles") {
+      // Generate report from classified articles
+      setReportLoading(true);
+      setReportError(null);
+      setReport(null);
+      setResults(null);
+      setActiveView("report");
+      setQuery(qs.label);
+      setError(null);
+
+      try {
+        const allArticles = await getAllArticles();
+        const classified = allArticles.filter(a => a.scores && a.deepClassifiedAt);
+        if (classified.length === 0) {
+          // fallback: use any classified articles
+          const anyClassified = allArticles.filter(a => a.scores);
+          if (anyClassified.length === 0) throw new Error("Keine klassifizierten Artikel vorhanden. Bitte zuerst Feeds laden und klassifizieren.");
+          await generateArticleSummaryReport(anyClassified.slice(0, 50), qs.prompt, (text) => setReport(text));
+        } else {
+          await generateArticleSummaryReport(classified.slice(0, 50), qs.prompt, (text) => setReport(text));
+        }
+      } catch (err) {
+        setReportError(err.message);
+      } finally {
+        setReportLoading(false);
+      }
+    } else {
+      // Web search with extra context
+      setQuery(qs.searchQuery || qs.label);
+      setSearching(true);
+      setError(null);
+      setResults(null);
+      setReport(null);
+      setReportError(null);
+      setActiveView("results");
+      setStatusMsg(null);
+      setScored(false);
+
+      try {
+        const searchQ = qs.searchQuery || qs.label;
+        const res = await searchWeb(searchQ, { dateFilter: dateFilter || null }, (msg) => setStatusMsg(msg));
+        setResults(res);
+
+        // Auto-generate report with the custom prompt as extra context
+        setReportLoading(true);
+        setActiveView("report");
+        await generateSearchReport(searchQ, res, (text) => setReport(text), qs.prompt);
+      } catch (err) {
+        setError(err.message);
+      } finally {
+        setSearching(false);
+        setReportLoading(false);
+        setStatusMsg(null);
+      }
+    }
+  };
+
+  const handleSaveQuickSearchEdit = () => {
+    if (!editingQuickSearch) return;
+    const updated = quickSearches.map(qs =>
+      qs.id === editingQuickSearch.id ? editingQuickSearch : qs
+    );
+    // If it's a new button (not in the list yet), add it
+    if (!quickSearches.find(qs => qs.id === editingQuickSearch.id)) {
+      updated.push(editingQuickSearch);
+    }
+    saveQuickSearches(updated);
+    setShowQuickSearchEditor(false);
+    setEditingQuickSearch(null);
+  };
+
+  const handleDeleteQuickSearch = (id) => {
+    saveQuickSearches(quickSearches.filter(qs => qs.id !== id));
+  };
+
+  const handleAddQuickSearch = () => {
+    setEditingQuickSearch({
+      id: `qs-${Date.now()}`,
+      label: "",
+      mode: "web",
+      searchQuery: "",
+      prompt: "",
+    });
+    setShowQuickSearchEditor(true);
+  };
+
   return (
     <div className="space-y-6">
+      {/* Quick Search Editor Modal */}
+      {showQuickSearchEditor && editingQuickSearch && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+            <div className="p-6">
+              <h3 className="text-lg font-bold text-gray-900 mb-4">
+                {quickSearches.find(qs => qs.id === editingQuickSearch.id) ? "Button bearbeiten" : "Neuer Button"}
+              </h3>
+
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Button-Label</label>
+                  <input
+                    type="text"
+                    value={editingQuickSearch.label}
+                    onChange={e => setEditingQuickSearch({ ...editingQuickSearch, label: e.target.value })}
+                    placeholder="z.B. Was gibt es Neues zu KI?"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Modus</label>
+                  <select
+                    value={editingQuickSearch.mode}
+                    onChange={e => setEditingQuickSearch({ ...editingQuickSearch, mode: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                  >
+                    <option value="web">Web-Recherche</option>
+                    <option value="articles">Artikel-Analyse (lokale Daten)</option>
+                  </select>
+                </div>
+
+                {editingQuickSearch.mode === "web" && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Suchbegriff (optional, sonst Label)</label>
+                    <input
+                      type="text"
+                      value={editingQuickSearch.searchQuery}
+                      onChange={e => setEditingQuickSearch({ ...editingQuickSearch, searchQuery: e.target.value })}
+                      placeholder="z.B. AI coding agents software development 2026"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                    />
+                  </div>
+                )}
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Prompt / Zusätzlicher Kontext
+                  </label>
+                  <textarea
+                    value={editingQuickSearch.prompt}
+                    onChange={e => setEditingQuickSearch({ ...editingQuickSearch, prompt: e.target.value })}
+                    rows={8}
+                    placeholder="Detaillierte Anweisungen für die KI..."
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none text-sm font-mono"
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-3 mt-6">
+                <button
+                  onClick={() => { setShowQuickSearchEditor(false); setEditingQuickSearch(null); }}
+                  className="px-4 py-2 text-sm text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"
+                >
+                  Abbrechen
+                </button>
+                <button
+                  onClick={handleSaveQuickSearchEdit}
+                  disabled={!editingQuickSearch.label.trim() || !editingQuickSearch.prompt.trim()}
+                  className="px-4 py-2 text-sm text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed"
+                >
+                  Speichern
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Search Input */}
       <div className="bg-white rounded-lg shadow p-6">
         <h2 className="text-2xl font-bold text-gray-900 mb-4">KI-Recherche</h2>
@@ -339,6 +565,55 @@ function OpenSearch() {
         </div>
       </div>
 
+      {/* Quick Search Buttons */}
+      <div className="bg-white rounded-lg shadow p-6">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-sm font-semibold text-gray-700">Schnellrecherche</h3>
+          <button
+            onClick={handleAddQuickSearch}
+            className="text-xs text-blue-600 hover:text-blue-800 transition-colors"
+          >
+            + Neuer Button
+          </button>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {quickSearches.map((qs) => (
+            <div key={qs.id} className="group relative">
+              <button
+                onClick={() => handleQuickSearch(qs)}
+                disabled={searching || reportLoading}
+                className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
+                  qs.mode === "articles"
+                    ? "bg-indigo-100 text-indigo-800 hover:bg-indigo-200"
+                    : "bg-blue-100 text-blue-800 hover:bg-blue-200"
+                }`}
+              >
+                {qs.mode === "articles" ? "📊 " : "🔍 "}{qs.label}
+              </button>
+              <div className="absolute -top-1 -right-1 hidden group-hover:flex gap-0.5">
+                <button
+                  onClick={(e) => { e.stopPropagation(); setEditingQuickSearch({ ...qs }); setShowQuickSearchEditor(true); }}
+                  className="w-5 h-5 text-xs bg-gray-600 text-white rounded-full flex items-center justify-center hover:bg-gray-800"
+                  title="Bearbeiten"
+                >
+                  ✎
+                </button>
+                <button
+                  onClick={(e) => { e.stopPropagation(); handleDeleteQuickSearch(qs.id); }}
+                  className="w-5 h-5 text-xs bg-red-600 text-white rounded-full flex items-center justify-center hover:bg-red-800"
+                  title="Löschen"
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+        <p className="text-xs text-gray-400 mt-2">
+          Hover über einen Button für Bearbeiten/Löschen. Web-Buttons suchen im Internet, Artikel-Buttons analysieren lokale Daten.
+        </p>
+      </div>
+
       {/* Progress */}
       {(searching || scoring) && (
         <div className="bg-white rounded-lg shadow p-6">
@@ -359,17 +634,21 @@ function OpenSearch() {
       )}
 
       {/* Results */}
-      {results !== null && !searching && (
+      {(results !== null || report || reportLoading) && !searching && (
         <div className="space-y-4">
           {/* Result header + tabs */}
           <div className="bg-white rounded-lg shadow p-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-4">
                 <h3 className="font-semibold text-gray-900">
-                  {results.length} Ergebnis{results.length !== 1 ? "se" : ""} für „{query}"
+                  {results ? (
+                    <>{results.length} Ergebnis{results.length !== 1 ? "se" : ""} für „{query}"</>
+                  ) : (
+                    <>Report: {query}</>
+                  )}
                   {scored && <span className="text-xs text-green-600 ml-2">✓ bewertet</span>}
                 </h3>
-                {results.length > 0 && (
+                {results && results.length > 0 && (
                   <div className="flex gap-1">
                     <button
                       onClick={() => setActiveView("results")}
@@ -412,7 +691,7 @@ function OpenSearch() {
                   </div>
                 )}
               </div>
-              {results.length > 0 && activeView === "report" && report && (
+              {activeView === "report" && report && (
                 <div className="flex gap-2">
                   <button
                     onClick={handleCopyReport}
