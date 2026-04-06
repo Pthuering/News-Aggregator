@@ -99,9 +99,9 @@ export async function classifyNew(onProgress) {
             deadline: result.deadline || null,
             classifiedAt: new Date().toISOString(),
           });
-          results.push({ success: true, articleId: article.id });
+          results.push({ success: true, articleId: article.id, title: article.title, contentLength: article.content?.length || 0, scores: result.scores });
         } else {
-          results.push({ success: false, articleId: article.id, error: "No result" });
+          results.push({ success: false, articleId: article.id, title: article.title, contentLength: article.content?.length || 0, error: "No result" });
         }
       }
     } catch (error) {
@@ -123,20 +123,20 @@ export async function classifyNew(onProgress) {
                 deadline: singleResults[0].deadline || null,
                 classifiedAt: new Date().toISOString(),
               });
-              results.push({ success: true, articleId: article.id });
+              results.push({ success: true, articleId: article.id, title: article.title, contentLength: article.content?.length || 0, scores: singleResults[0].scores });
             } else {
-              results.push({ success: false, articleId: article.id, error: "No result" });
+              results.push({ success: false, articleId: article.id, title: article.title, contentLength: article.content?.length || 0, error: "No result" });
             }
           } catch (singleError) {
             console.error(`[Classify] Individual article failed:`, article.id, singleError.message);
-            results.push({ success: false, articleId: article.id, error: singleError.message });
+            results.push({ success: false, articleId: article.id, title: article.title, contentLength: article.content?.length || 0, error: singleError.message });
           }
           // Pause between individual retries
           await new Promise((resolve) => setTimeout(resolve, 1000));
         }
       } else {
         for (const article of batch) {
-          results.push({ success: false, articleId: article.id, error: error.message });
+          results.push({ success: false, articleId: article.id, title: article.title, contentLength: article.content?.length || 0, error: error.message });
         }
       }
     }
@@ -158,7 +158,7 @@ export async function classifyNew(onProgress) {
     .filter(r => !r.success && r.error)
     .map(r => r.error);
 
-  return { classified, failed, errors };
+  return { classified, failed, errors, details: results };
 }
 
 /**
@@ -623,8 +623,8 @@ function cleanExtractedText(text) {
     .trim();
 
   // Truncate to a generous limit for full-text analysis
-  if (cleaned.length > 12000) {
-    cleaned = cleaned.substring(0, 12000) + "...";
+  if (cleaned.length > 32000) {
+    cleaned = cleaned.substring(0, 32000) + "...";
   }
 
   return cleaned;
@@ -684,14 +684,14 @@ export async function deepClassify(onProgress) {
       fullText = await fetchArticleFullText(article.url, workerUrl);
     } catch (fetchError) {
       console.warn(`[DeepClassify] Failed to fetch ${article.url}: ${fetchError.message}`);
-      results.push({ success: false, articleId: article.id, error: `Fetch failed: ${fetchError.message}` });
+      results.push({ success: false, articleId: article.id, title: article.title, contentLength: 0, error: `Fetch failed: ${fetchError.message}` });
       await new Promise(r => setTimeout(r, 500));
       continue;
     }
 
     if (!fullText || fullText.length < 100) {
       console.warn(`[DeepClassify] Insufficient content from ${article.url} (${fullText?.length || 0} chars)`);
-      results.push({ success: false, articleId: article.id, error: "Insufficient full-text content" });
+      results.push({ success: false, articleId: article.id, title: article.title, contentLength: fullText?.length || 0, error: `Nur ${fullText?.length || 0} Zeichen extrahiert` });
       continue;
     }
 
@@ -715,13 +715,13 @@ export async function deepClassify(onProgress) {
           deepClassifiedAt: new Date().toISOString(),
         });
         console.log(`[DeepClassify] Re-classified: ${JSON.stringify(batchResults[0].scores)}`);
-        results.push({ success: true, articleId: article.id });
+        results.push({ success: true, articleId: article.id, title: article.title, contentLength: fullText.length, scores: batchResults[0].scores });
       } else {
-        results.push({ success: false, articleId: article.id, error: "No result from re-classification" });
+        results.push({ success: false, articleId: article.id, title: article.title, contentLength: fullText.length, error: "Keine Ergebnisse von Re-Klassifikation" });
       }
     } catch (classifyError) {
       console.error(`[DeepClassify] Classification failed for ${article.id}: ${classifyError.message}`);
-      results.push({ success: false, articleId: article.id, error: classifyError.message });
+      results.push({ success: false, articleId: article.id, title: article.title, contentLength: fullText?.length || 0, error: classifyError.message });
     }
 
     // Pause between articles to respect rate limits
@@ -738,7 +738,7 @@ export async function deepClassify(onProgress) {
   const failed = results.filter(r => !r.success).length;
   const errors = results.filter(r => !r.success && r.error).map(r => r.error);
 
-  return { deepClassified, failed, skipped: allArticles.length - candidates.length, errors };
+  return { deepClassified, failed, skipped: allArticles.length - candidates.length, errors, details: results };
 }
 
 export default {

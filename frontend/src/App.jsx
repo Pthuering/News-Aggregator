@@ -4,7 +4,7 @@
  *          project management, synergy matching, and keyword intelligence
  */
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { initDB, getAllArticles, getUnclassifiedArticles, updateArticle } from "./stores/articleStore.js";
 import { fetchAllFeeds } from "./services/feedService.js";
 import { classifyNew, deepClassify } from "./services/classifyService.js";
@@ -48,6 +48,20 @@ function App() {
   const [clusterLoading, setClusterLoading] = useState(false);
   const [projectCount, setProjectCount] = useState(0);
   const [unmatchedCount, setUnmatchedCount] = useState(0);
+  const [logMessages, setLogMessages] = useState([]);
+  const logRef = useRef(null);
+
+  const addLog = useCallback((type, message) => {
+    const entry = { type, message, time: new Date().toLocaleTimeString("de-DE") };
+    setLogMessages(prev => [...prev, entry]);
+  }, []);
+
+  // Auto-scroll log panel
+  useEffect(() => {
+    if (logRef.current) {
+      logRef.current.scrollTop = logRef.current.scrollHeight;
+    }
+  }, [logMessages]);
 
   // Initialize DB and check API key on mount
   useEffect(() => {
@@ -99,10 +113,17 @@ function App() {
   const handleFetchFeeds = async () => {
     setLoading(true);
     setResult(null);
+    addLog("info", "🔄 Feeds werden aktualisiert...");
 
     try {
       const ingestResult = await fetchAllFeeds();
       setResult(ingestResult);
+      addLog("success", `✅ Feeds: ${ingestResult.newCount} neue Artikel geladen`);
+      if (ingestResult.errors.length > 0) {
+        ingestResult.errors.forEach(err => {
+          addLog("error", `❌ Feed ${err.source}: ${err.error}`);
+        });
+      }
       await loadArticles();
     } catch (error) {
       setResult({
@@ -110,6 +131,7 @@ function App() {
         skipped: 0,
         errors: [{ source: "Allgemein", error: error.message }],
       });
+      addLog("error", `❌ Feed-Fehler: ${error.message}`);
     } finally {
       setLoading(false);
     }
@@ -122,6 +144,7 @@ function App() {
     setClassifyLoading(true);
     setClassifyResult(null);
     setClassifyProgress({ current: 0, total: unclassifiedCount });
+    addLog("info", `🔄 Klassifikation gestartet (${unclassifiedCount} Artikel)...`);
 
     try {
       // Pass 1: Quick classify from RSS snippets
@@ -129,11 +152,59 @@ function App() {
         setClassifyProgress(progress);
       });
       
+      addLog("success", `✅ Vorklassifikation: ${result.classified} klassifiziert, ${result.failed} fehlgeschlagen`);
+      
+      // Log short-content articles
+      if (result.details) {
+        const emptyArticles = result.details.filter(d => d.contentLength === 0);
+        if (emptyArticles.length > 0) {
+          addLog("warn", `⚠️ ${emptyArticles.length} Artikel ohne Inhalt (0 Zeichen):`);
+          emptyArticles.forEach(d => {
+            addLog("detail", `   "${d.title?.substring(0, 60)}..." — 0 Zeichen`);
+          });
+        }
+        const failedDetails = result.details.filter(d => !d.success);
+        if (failedDetails.length > 0) {
+          addLog("warn", `⚠️ ${failedDetails.length} fehlgeschlagene Artikel:`);
+          failedDetails.forEach(d => {
+            addLog("detail", `   "${d.title?.substring(0, 60)}..." — ${d.error}`);
+          });
+        }
+      }
+      
       // Pass 2: Deep classify high-scoring articles with full text
-      setClassifyProgress({ current: 0, total: 0 }); // reset before deep pass
+      addLog("info", "🔄 Tiefenanalyse gestartet (Score ≥ 5)...");
+      setClassifyProgress({ current: 0, total: 0 });
       const deepResult = await deepClassify((progress) => {
         setClassifyProgress({ current: progress.current, total: progress.total, phase: "deep" });
       });
+      
+      addLog("success", `✅ Tiefenanalyse: ${deepResult.deepClassified} analysiert, ${deepResult.failed} fehlgeschlagen, ${deepResult.skipped} übersprungen`);
+      
+      // Log deep classify details
+      if (deepResult.details) {
+        const fetchFailed = deepResult.details.filter(d => !d.success && d.error?.startsWith("Fetch"));
+        const tooShort = deepResult.details.filter(d => !d.success && d.contentLength !== undefined && d.contentLength < 100);
+        if (fetchFailed.length > 0) {
+          addLog("warn", `⚠️ ${fetchFailed.length} Artikel konnten nicht geladen werden:`);
+          fetchFailed.forEach(d => {
+            addLog("detail", `   "${d.title?.substring(0, 60)}..." — ${d.error}`);
+          });
+        }
+        if (tooShort.length > 0) {
+          addLog("warn", `⚠️ ${tooShort.length} Artikel mit zu wenig extrahiertem Text:`);
+          tooShort.forEach(d => {
+            addLog("detail", `   "${d.title?.substring(0, 60)}..." — ${d.contentLength} Zeichen`);
+          });
+        }
+        const deepSuccess = deepResult.details.filter(d => d.success);
+        if (deepSuccess.length > 0) {
+          addLog("info", `📊 Tiefenanalyse-Details:`);
+          deepSuccess.forEach(d => {
+            addLog("detail", `   "${d.title?.substring(0, 60)}..." — ${d.contentLength} Zeichen`);
+          });
+        }
+      }
       
       setClassifyResult({
         ...result,
@@ -148,6 +219,7 @@ function App() {
         failed: unclassifiedCount,
         errors: [error.message],
       });
+      addLog("error", `❌ Klassifikation fehlgeschlagen: ${error.message}`);
     } finally {
       setClassifyLoading(false);
       setClassifyProgress({ current: 0, total: 0 });
@@ -161,12 +233,17 @@ function App() {
     setMatchLoading(true);
     setMatchResult(null);
     setMatchProgress({ current: 0, total: 0, skipped: 0 });
+    addLog("info", `🔄 Synergy-Matching gestartet (${unmatchedCount} Artikel)...`);
 
     try {
       const result = await matchNewArticles((progress) => {
         setMatchProgress(progress);
       });
       setMatchResult(result);
+      addLog("success", `✅ Matching: ${result.matched} Synergien gefunden, ${result.skipped} übersprungen`);
+      if (result.errors?.length > 0) {
+        result.errors.forEach(e => addLog("error", `❌ Match-Fehler: ${e}`));
+      }
       await loadArticles();
     } catch (error) {
       setMatchResult({
@@ -175,6 +252,7 @@ function App() {
         skipped: 0,
         errors: [error.message],
       });
+      addLog("error", `❌ Matching fehlgeschlagen: ${error.message}`);
     } finally {
       setMatchLoading(false);
       setMatchProgress({ current: 0, total: 0, skipped: 0 });
@@ -185,12 +263,15 @@ function App() {
   const handleCluster = async () => {
     setClusterLoading(true);
     setClusterResult(null);
+    addLog("info", "🔄 Clustering gestartet...");
     try {
       const result = await clusterArticles();
       setClusterResult(result);
+      addLog("success", `✅ Clustering: ${result.clusters.length} Cluster erkannt, ${result.unclustered} nicht zugeordnet`);
       await loadArticles();
     } catch (error) {
       setClusterResult({ clusters: [], unclustered: 0, error: error.message });
+      addLog("error", `❌ Clustering fehlgeschlagen: ${error.message}`);
     } finally {
       setClusterLoading(false);
     }
@@ -204,13 +285,20 @@ function App() {
     setClassifyResult(null);
     setMatchResult(null);
     setClusterResult(null);
+    setLogMessages([]);
+    addLog("info", "🚀 Komplett-Durchlauf gestartet...");
 
     try {
       const feedResult = await fetchAllFeeds();
       setResult(feedResult);
+      addLog("success", `✅ Feeds: ${feedResult.newCount} neue Artikel`);
+      if (feedResult.errors.length > 0) {
+        feedResult.errors.forEach(err => addLog("error", `❌ Feed ${err.source}: ${err.error}`));
+      }
       await loadArticles();
     } catch (error) {
       setResult({ newCount: 0, skipped: 0, errors: [{ source: "Allgemein", error: error.message }] });
+      addLog("error", `❌ Feed-Fehler: ${error.message}`);
       setLoading(false);
       return;
     }
@@ -221,15 +309,45 @@ function App() {
     if (hasApiKey && unclassified.length > 0) {
       setClassifyLoading(true);
       setClassifyProgress({ current: 0, total: unclassified.length });
+      addLog("info", `🔄 Klassifikation (${unclassified.length} Artikel)...`);
       try {
-        // Pass 1: Quick classify from RSS snippets
         const cResult = await classifyNew((progress) => setClassifyProgress(progress));
+        addLog("success", `✅ Vorklassifikation: ${cResult.classified} ok, ${cResult.failed} fehlgeschlagen`);
         
-        // Pass 2: Deep classify high-scoring articles with full text
+        // Log short-content and failed from first pass
+        if (cResult.details) {
+          const emptyArticles = cResult.details.filter(d => d.contentLength === 0);
+          if (emptyArticles.length > 0) {
+            addLog("warn", `⚠️ ${emptyArticles.length} Artikel ohne Inhalt (0 Zeichen):`);
+            emptyArticles.forEach(d => addLog("detail", `   "${d.title?.substring(0, 60)}..." — 0 Zeichen`));
+          }
+          const failedDetails = cResult.details.filter(d => !d.success);
+          if (failedDetails.length > 0) {
+            addLog("warn", `⚠️ ${failedDetails.length} fehlgeschlagene Artikel:`);
+            failedDetails.forEach(d => addLog("detail", `   "${d.title?.substring(0, 60)}..." — ${d.error}`));
+          }
+        }
+        
+        // Deep classify
+        addLog("info", "🔄 Tiefenanalyse (Score ≥ 5)...");
         setClassifyProgress({ current: 0, total: 0 });
         const deepResult = await deepClassify((progress) => {
           setClassifyProgress({ current: progress.current, total: progress.total, phase: "deep" });
         });
+        
+        addLog("success", `✅ Tiefenanalyse: ${deepResult.deepClassified} analysiert, ${deepResult.failed} fehlgeschlagen`);
+        if (deepResult.details) {
+          const fetchFailed = deepResult.details.filter(d => !d.success && d.error?.startsWith("Fetch"));
+          if (fetchFailed.length > 0) {
+            addLog("warn", `⚠️ ${fetchFailed.length} Artikel nicht ladbar:`);
+            fetchFailed.forEach(d => addLog("detail", `   "${d.title?.substring(0, 60)}..." — ${d.error}`));
+          }
+          const tooShort = deepResult.details.filter(d => !d.success && d.contentLength !== undefined && d.contentLength < 100);
+          if (tooShort.length > 0) {
+            addLog("warn", `⚠️ ${tooShort.length} Artikel mit zu wenig Text:`);
+            tooShort.forEach(d => addLog("detail", `   "${d.title?.substring(0, 60)}..." — ${d.contentLength} Zeichen`));
+          }
+        }
         
         setClassifyResult({
           ...cResult,
@@ -240,6 +358,7 @@ function App() {
         await loadArticles();
       } catch (error) {
         setClassifyResult({ classified: 0, failed: unclassified.length, errors: [error.message] });
+        addLog("error", `❌ Klassifikation: ${error.message}`);
       }
       setClassifyLoading(false);
       setClassifyProgress({ current: 0, total: 0 });
@@ -252,25 +371,36 @@ function App() {
     if (hasApiKey && projectsNow.length > 0 && unmatchedAfter.length > 0) {
       setMatchLoading(true);
       setMatchProgress({ current: 0, total: 0, skipped: 0 });
+      addLog("info", `🔄 Matching (${unmatchedAfter.length} Artikel, ${projectsNow.length} Projekte)...`);
       try {
         const mResult = await matchNewArticles((progress) => setMatchProgress(progress));
         setMatchResult(mResult);
+        addLog("success", `✅ Matching: ${mResult.matched} Synergien, ${mResult.skipped} übersprungen`);
+        if (mResult.errors?.length > 0) {
+          mResult.errors.forEach(e => addLog("error", `❌ ${e}`));
+        }
         await loadArticles();
       } catch (error) {
         setMatchResult({ matched: 0, synergiesFound: 0, skipped: 0, errors: [error.message] });
+        addLog("error", `❌ Matching: ${error.message}`);
       }
       setMatchLoading(false);
       setMatchProgress({ current: 0, total: 0, skipped: 0 });
     }
 
-    // Step 4: Cluster (always runs after classification, no API key needed)
+    // Step 4: Cluster
     setClusterLoading(true);
+    addLog("info", "🔄 Clustering...");
     try {
       const clResult = await clusterArticles();
       setClusterResult(clResult);
+      addLog("success", `✅ Clustering: ${clResult.clusters.length} Cluster, ${clResult.unclustered} nicht zugeordnet`);
       await loadArticles();
-    } catch (_) { /* clustering failure is non-critical */ }
+    } catch (error) {
+      addLog("error", `❌ Clustering: ${error.message}`);
+    }
     setClusterLoading(false);
+    addLog("success", "🏁 Komplett-Durchlauf abgeschlossen");
   };
 
   // Format date for display
@@ -729,87 +859,38 @@ function App() {
           />
         </div>
 
-        {/* Feed result summary */}
-        {result && (
-          <div className="mb-4 p-4 bg-white rounded-lg shadow">
-            <div className="text-sm text-gray-700">
-              <span className="font-medium">{result.newCount}</span> neue Artikel
-              {result.skipped > 0 && (
-                <>, <span className="font-medium">{result.skipped}</span> übersprungen</>
-              )}
-              {result.errors.length > 0 && (
-                <>, <span className="font-medium text-red-600">{result.errors.length} Fehler</span></>
-              )}
+        {/* Unified Log Panel */}
+        {logMessages.length > 0 && (
+          <div className="mb-4 bg-gray-900 rounded-lg shadow overflow-hidden">
+            <div className="flex items-center justify-between px-4 py-2 bg-gray-800">
+              <span className="text-xs font-mono text-gray-400">Protokoll</span>
+              <button
+                onClick={() => setLogMessages([])}
+                className="text-xs text-gray-500 hover:text-gray-300 transition-colors"
+              >
+                Löschen
+              </button>
             </div>
-
-            {result.errors.length > 0 && (
-              <div className="mt-3 space-y-1">
-                {result.errors.map((err, idx) => (
-                  <div key={idx} className="text-sm text-red-600">
-                    {err.source}: {err.error}
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Classification result */}
-        {classifyResult && (
-          <div className="mb-4 p-4 bg-white rounded-lg shadow border-l-4 border-purple-500">
-            <div className="text-sm text-gray-700">
-              <span className="font-medium">{classifyResult.classified}</span> klassifiziert
-              {classifyResult.deepClassified > 0 && (
-                <>, <span className="font-medium text-indigo-600">{classifyResult.deepClassified} tiefenanalysiert</span></>
-              )}
-              {classifyResult.failed > 0 && (
-                <>, <span className="font-medium text-red-600">{classifyResult.failed} fehlgeschlagen</span></>
-              )}
+            <div
+              ref={logRef}
+              className="px-4 py-3 max-h-64 overflow-y-auto font-mono text-xs leading-relaxed space-y-0.5"
+            >
+              {logMessages.map((entry, idx) => (
+                <div
+                  key={idx}
+                  className={
+                    entry.type === "error" ? "text-red-400" :
+                    entry.type === "warn" ? "text-yellow-400" :
+                    entry.type === "success" ? "text-green-400" :
+                    entry.type === "detail" ? "text-gray-500" :
+                    "text-gray-300"
+                  }
+                >
+                  <span className="text-gray-600 mr-2">{entry.time}</span>
+                  {entry.message}
+                </div>
+              ))}
             </div>
-            {classifyResult.errors.length > 0 && (
-              <div className="mt-2 text-xs text-red-600">
-                {classifyResult.errors[0]}
-                {classifyResult.errors.length > 1 && ` (+${classifyResult.errors.length - 1} weitere)`}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Match result */}
-        {matchResult && (
-          <div className="mb-4 p-4 bg-white rounded-lg shadow" style={{ borderLeft: '4px solid #0d9488' }}>
-            <div className="text-sm text-gray-700">
-              <span className="font-medium">{matchResult.matched}</span> Synergien gefunden,{" "}
-              <span className="font-medium">{matchResult.skipped}</span> per Vorfilter übersprungen
-              {matchResult.failed > 0 && (
-                <>, <span className="font-medium text-red-600">{matchResult.failed} fehlgeschlagen</span></>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* Cluster result */}
-        {clusterResult && (
-          <div className="mb-4 p-4 bg-white rounded-lg shadow" style={{ borderLeft: '4px solid #d97706' }}>
-            <div className="text-sm text-gray-700">
-              <span className="font-medium">{clusterResult.clusters.length}</span> Cluster erkannt,{" "}
-              <span className="font-medium">{clusterResult.unclustered}</span> nicht zugeordnet
-              {clusterResult.error && (
-                <span className="ml-2 text-red-600">Fehler: {clusterResult.error}</span>
-              )}
-            </div>
-            {clusterResult.clusters.length > 0 && (
-              <div className="mt-2 flex flex-wrap gap-2">
-                {clusterResult.clusters.slice(0, 8).map(c => (
-                  <span key={c.id} className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-800">
-                    {c.name} ({c.articleCount})
-                  </span>
-                ))}
-                {clusterResult.clusters.length > 8 && (
-                  <span className="text-xs text-gray-500">+{clusterResult.clusters.length - 8} weitere</span>
-                )}
-              </div>
-            )}
           </div>
         )}
 
