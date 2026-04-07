@@ -5,6 +5,9 @@
  * Endpoints:
  * - GET /?url=https://example.com/feed.xml - RSS Proxy
  * - POST /api/nvidia - NVIDIA API Proxy
+ *
+ * Environment Secrets:
+ * - NVIDIA_API_KEY: Fallback API key used when client sends no Authorization header
  */
 
 export default {
@@ -27,7 +30,7 @@ export default {
 
     // NVIDIA API Proxy
     if (path === "/api/nvidia" && request.method === "POST") {
-      return handleNvidiaProxy(request);
+      return handleNvidiaProxy(request, env);
     }
 
     // RSS Feed Proxy (original)
@@ -49,19 +52,41 @@ export default {
 };
 
 /**
- * Handle NVIDIA API proxy requests
+ * Handle NVIDIA API proxy requests.
+ * Uses client-provided Authorization header if present,
+ * otherwise falls back to the worker's NVIDIA_API_KEY secret.
  */
-async function handleNvidiaProxy(request) {
+async function handleNvidiaProxy(request, env) {
   try {
     const body = await request.json();
     const isStream = body.stream === true;
     
+    // Use client key if provided, otherwise fall back to worker secret
+    const clientAuth = request.headers.get("Authorization");
+    const hasClientKey = clientAuth && clientAuth !== "Bearer " && clientAuth !== "Bearer undefined" && clientAuth !== "Bearer null";
+    const authorization = hasClientKey
+      ? clientAuth
+      : (env.NVIDIA_API_KEY ? `Bearer ${env.NVIDIA_API_KEY}` : "");
+
+    if (!authorization) {
+      return new Response(
+        JSON.stringify({ error: "No API key configured. Set NVIDIA_API_KEY secret on the worker or provide Authorization header." }),
+        {
+          status: 401,
+          headers: {
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*",
+          },
+        }
+      );
+    }
+
     // Forward to NVIDIA API
     const nvidiaResponse = await fetch("https://integrate.api.nvidia.com/v1/chat/completions", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "Authorization": request.headers.get("Authorization") || "",
+        "Authorization": authorization,
       },
       body: JSON.stringify(body),
     });

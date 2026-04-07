@@ -131,7 +131,6 @@ Scores: OeV=${a.scores?.oepnv_direkt || 0}, TT=${a.scores?.tech_transfer || 0}${
  */
 export async function matchSingle(article) {
   const apiKey = await getNvidiaApiKey();
-  if (!apiKey) throw new Error("Kein API-Key konfiguriert");
 
   const projects = await getProjects();
   if (projects.length === 0) return [];
@@ -164,7 +163,6 @@ export async function matchSingle(article) {
  */
 export async function matchNewArticles(onProgress) {
   const apiKey = await getNvidiaApiKey();
-  if (!apiKey) throw new Error("Kein API-Key konfiguriert");
 
   const projects = await getProjects();
   if (projects.length === 0) {

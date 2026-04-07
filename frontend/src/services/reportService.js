@@ -80,11 +80,8 @@ function buildUserMessage(articles, includeUserNotes) {
 export async function generateReport(config, onChunk) {
   const { articleIds, purpose, includeUserNotes } = config;
 
-  // Validate API key
+  // Get API key (optional – worker has fallback)
   const apiKey = await getNvidiaApiKey();
-  if (!apiKey) {
-    throw new Error("Kein API-Key vorhanden. Bitte in den Einstellungen hinterlegen.");
-  }
   
   // Validate articles
   if (!articleIds || articleIds.length === 0) {

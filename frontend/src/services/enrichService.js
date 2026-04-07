@@ -31,9 +31,6 @@ const WORKER_URL = "https://rss-proxy-1.philipp-thuering.workers.dev";
  */
 export async function enrichArticle(article) {
   const apiKey = await getNvidiaApiKey();
-  if (!apiKey) {
-    throw new Error("NVIDIA API key not configured. Please add it in Settings.");
-  }
 
   const systemPrompt = getEnrichPrompt();
   const userMessage = `**Titel:** ${article.title}\n\n**Inhalt:**\n${article.content}`;

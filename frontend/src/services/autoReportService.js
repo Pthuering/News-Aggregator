@@ -234,7 +234,6 @@ function buildUserMessage(significantArticles) {
  */
 export async function generateAutoReport(significantArticles, onChunk) {
   const apiKey = await getNvidiaApiKey();
-  if (!apiKey) throw new Error("Kein API-Key vorhanden. Bitte in den Einstellungen hinterlegen.");
 
   if (!significantArticles || significantArticles.length === 0) {
     throw new Error("Keine signifikanten Artikel ausgewählt.");

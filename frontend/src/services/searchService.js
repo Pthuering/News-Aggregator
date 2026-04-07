@@ -177,7 +177,6 @@ async function scoreBatch(apiKey, query, items) {
  */
 export async function scoreResults(query, results, onProgress) {
   const apiKey = await getNvidiaApiKey();
-  if (!apiKey) throw new Error("Kein API-Key vorhanden. Bitte in den Einstellungen hinterlegen.");
 
   /* 1 — fetch page contents in parallel */
   if (onProgress) onProgress("Seiteninhalte werden geladen…");
@@ -245,7 +244,6 @@ export async function scoreResults(query, results, onProgress) {
  */
 export async function generateSearchReport(query, results, onChunk, extraContext) {
   const apiKey = await getNvidiaApiKey();
-  if (!apiKey) throw new Error("Kein API-Key vorhanden.");
 
   // If results already have content (from scoring), use directly;
   // otherwise fetch page content now.
@@ -389,7 +387,6 @@ export async function generateSearchReport(query, results, onChunk, extraContext
  */
 export async function generateArticleSummaryReport(articles, prompt, onChunk) {
   const apiKey = await getNvidiaApiKey();
-  if (!apiKey) throw new Error("Kein API-Key vorhanden.");
 
   if (!articles || articles.length === 0) {
     throw new Error("Keine Artikel vorhanden.");

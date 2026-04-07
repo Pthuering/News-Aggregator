@@ -55,9 +55,6 @@ async function callNvidiaApiViaWorker(workerUrl, apiKey, body) {
  */
 export async function classifyNew(onProgress) {
   const apiKey = await getNvidiaApiKey();
-  if (!apiKey) {
-    throw new Error("NVIDIA API key not configured. Please add it in Settings.");
-  }
 
   const articles = await getUnclassifiedArticles();
   console.log(`[Classify] Found ${articles.length} unclassified articles`);
@@ -234,9 +231,6 @@ async function classifyBatchWithWorker(workerUrl, apiKey, articles) {
  */
 export async function classifySingle(article) {
   const apiKey = await getNvidiaApiKey();
-  if (!apiKey) {
-    throw new Error("NVIDIA API key not configured. Please add it in Settings.");
-  }
 
   const results = await classifyBatchWithWorker(WORKER_URLS[0], apiKey, [article]);
   
@@ -650,9 +644,6 @@ function getMaxScore(scores) {
  */
 export async function deepClassify(onProgress) {
   const apiKey = await getNvidiaApiKey();
-  if (!apiKey) {
-    throw new Error("NVIDIA API key not configured.");
-  }
 
   // Find articles that passed the first-pass threshold
   const allArticles = await getAllArticles();

@@ -12,7 +12,6 @@ import { matchNewArticles } from "./services/matchService.js";
 import { clusterArticles } from "./services/clusterService.js";
 import { selectSignificantArticles, checkMinimumArticles, generateAutoReport } from "./services/autoReportService.js";
 import { downloadReport, copyReportToClipboard } from "./services/reportService.js";
-import { getNvidiaApiKey } from "./stores/settingsStore.js";
 import { getProjects } from "./stores/projectStore.js";
 import Settings from "./components/Settings.jsx";
 import FilterBar, { INITIAL_FILTERS } from "./components/FilterBar.jsx";
@@ -30,7 +29,6 @@ import { initSources } from "./stores/sourceStore.js";
 function App() {
   const [articles, setArticles] = useState([]);
   const [unclassifiedCount, setUnclassifiedCount] = useState(0);
-  const [hasApiKey, setHasApiKey] = useState(false);
   const [loading, setLoading] = useState(false);
   const [classifyLoading, setClassifyLoading] = useState(false);
   const [classifyProgress, setClassifyProgress] = useState({ current: 0, total: 0 });
@@ -79,7 +77,6 @@ function App() {
     await initDB();
     await initSources();
     await loadArticles();
-    await checkApiKey();
     await loadProjectCount();
     setInitialized(true);
   };
@@ -104,11 +101,7 @@ function App() {
     setUnmatchedCount(unmatched.length);
   };
 
-  // Check if API key is set
-  const checkApiKey = async () => {
-    const key = await getNvidiaApiKey();
-    setHasApiKey(!!key);
-  };
+
 
   // Load project count
   const loadProjectCount = async () => {
@@ -146,7 +139,7 @@ function App() {
 
   // Handle classification button
   const handleClassify = async () => {
-    if (!hasApiKey || unclassifiedCount === 0) return;
+    if (unclassifiedCount === 0) return;
 
     setClassifyLoading(true);
     setClassifyResult(null);
@@ -235,7 +228,7 @@ function App() {
 
   // Handle synergy matching button
   const handleMatch = async () => {
-    if (!hasApiKey || projectCount === 0 || unmatchedCount === 0) return;
+    if (projectCount === 0 || unmatchedCount === 0) return;
 
     setMatchLoading(true);
     setMatchResult(null);
@@ -362,7 +355,7 @@ function App() {
 
     // Step 2: Classify (if there's anything to classify and API key is set)
     const unclassified = await getUnclassifiedArticles();
-    if (hasApiKey && unclassified.length > 0) {
+    if (unclassified.length > 0) {
       setClassifyLoading(true);
       setClassifyProgress({ current: 0, total: unclassified.length });
       addLog("info", `🔄 Klassifikation (${unclassified.length} Artikel)...`);
@@ -424,7 +417,7 @@ function App() {
     const allAfterClassify = await getAllArticles();
     const unmatchedAfter = allAfterClassify.filter(a => a.scores && a.synergies === undefined);
     const projectsNow = await getProjects();
-    if (hasApiKey && projectsNow.length > 0 && unmatchedAfter.length > 0) {
+    if (projectsNow.length > 0 && unmatchedAfter.length > 0) {
       setMatchLoading(true);
       setMatchProgress({ current: 0, total: 0, skipped: 0 });
       addLog("info", `🔄 Matching (${unmatchedAfter.length} Artikel, ${projectsNow.length} Projekte)...`);
@@ -716,7 +709,7 @@ function App() {
               style={{ maxWidth: '500px', maxHeight: '90vh', overflow: 'auto' }}
               onClick={(e) => e.stopPropagation()}
             >
-              <Settings onClose={() => { setShowSettings(false); checkApiKey(); }} />
+              <Settings onClose={() => { setShowSettings(false); }} />
             </div>
           </div>
         )}
@@ -840,11 +833,9 @@ function App() {
 
             <button
               onClick={handleClassify}
-              disabled={classifyLoading || !hasApiKey || unclassifiedCount === 0}
+              disabled={classifyLoading || unclassifiedCount === 0}
               title={
-                !hasApiKey
-                  ? "API-Key in Einstellungen hinterlegen"
-                  : unclassifiedCount === 0
+                unclassifiedCount === 0
                   ? "Keine unklassifizierten Artikel"
                   : ""
               }
@@ -859,11 +850,9 @@ function App() {
 
             <button
               onClick={handleMatch}
-              disabled={matchLoading || !hasApiKey || projectCount === 0 || unmatchedCount === 0}
+              disabled={matchLoading || projectCount === 0 || unmatchedCount === 0}
               title={
-                !hasApiKey
-                  ? "API-Key in Einstellungen hinterlegen"
-                  : projectCount === 0
+                projectCount === 0
                   ? "Erst Projekte anlegen (Tab 'Projekte')"
                   : unmatchedCount === 0
                   ? "Keine ungematchten Artikel"
@@ -1148,7 +1137,7 @@ function App() {
             style={{ maxWidth: '500px', maxHeight: '90vh', overflow: 'auto' }}
             onClick={(e) => e.stopPropagation()}
           >
-            <Settings onClose={() => { setShowSettings(false); checkApiKey(); }} />
+            <Settings onClose={() => { setShowSettings(false); }} />
           </div>
         </div>
       )}

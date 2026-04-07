@@ -15,12 +15,10 @@
 import { useState, useEffect, useMemo } from "react";
 import { getArticleById } from "../stores/articleStore.js";
 import { generateReport, downloadReport, copyReportToClipboard } from "../services/reportService.js";
-import { getNvidiaApiKey } from "../stores/settingsStore.js";
 
 function ReportGenerator({ articleIds, onClose }) {
   const [articles, setArticles] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [hasApiKey, setHasApiKey] = useState(false);
   
   // Report configuration
   const [purpose, setPurpose] = useState("");
@@ -46,8 +44,6 @@ function ReportGenerator({ articleIds, onClose }) {
       }
       setArticles(loaded);
       
-      const key = await getNvidiaApiKey();
-      setHasApiKey(!!key);
       setLoading(false);
     };
     
@@ -283,19 +279,17 @@ function ReportGenerator({ articleIds, onClose }) {
               {/* Generate Button */}
               <button
                 onClick={handleGenerate}
-                disabled={generating || articles.length === 0 || !hasApiKey}
+                disabled={generating || articles.length === 0}
                 style={{
-                  width: '100%', padding: '10px 16px', borderRadius: '6px', border: 'none', cursor: generating || articles.length === 0 || !hasApiKey ? 'not-allowed' : 'pointer',
-                  backgroundColor: generating || articles.length === 0 || !hasApiKey ? '#d1d5db' : '#7c3aed',
-                  color: generating || articles.length === 0 || !hasApiKey ? '#6b7280' : '#fff',
+                  width: '100%', padding: '10px 16px', borderRadius: '6px', border: 'none', cursor: generating || articles.length === 0 ? 'not-allowed' : 'pointer',
+                  backgroundColor: generating || articles.length === 0 ? '#d1d5db' : '#7c3aed',
+                  color: generating || articles.length === 0 ? '#6b7280' : '#fff',
                   fontSize: '14px', fontWeight: 600,
                 }}
               >
                 {generating 
                   ? generatingStatus || "Report wird generiert..."
-                  : !hasApiKey 
-                    ? "API-Key in Einstellungen hinterlegen" 
-                    : `Report generieren (${articles.length} Artikel)`
+                  : `Report generieren (${articles.length} Artikel)`
                 }
               </button>
             </div>
