@@ -4,5 +4,5 @@ import react from '@vitejs/plugin-react'
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react()],
-  base: './',  // Relative Pfade für GitHub Pages
+  base: '/News-Aggregator/',  // GitHub Pages Subpath
 })
