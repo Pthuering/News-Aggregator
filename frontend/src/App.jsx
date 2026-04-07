@@ -889,8 +889,8 @@ function App() {
               onClick={handleAutoReport}
               disabled={articles.filter(a => a.scores).length === 0}
               title={articles.filter(a => a.scores).length === 0 ? "Keine klassifizierten Artikel vorhanden" : "Signifikanteste Artikel automatisch auswählen und Report erstellen"}
-              style={articles.filter(a => a.scores).length === 0 ? {} : { backgroundColor: '#059669' }}
-              className="px-4 py-2 text-white rounded-md hover:opacity-90 disabled:bg-gray-300 disabled:text-gray-500 disabled:cursor-not-allowed transition-colors"
+              style={articles.filter(a => a.scores).length === 0 ? {} : { backgroundColor: '#059669', color: 'white' }}
+              className="px-4 py-2 rounded-md hover:opacity-90 disabled:bg-gray-300 disabled:text-gray-500 disabled:cursor-not-allowed transition-colors"
             >
               Auto-Report
             </button>
