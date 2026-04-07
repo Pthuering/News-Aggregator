@@ -17,38 +17,14 @@ import { getArticleById } from "../stores/articleStore.js";
 import { generateReport, downloadReport, copyReportToClipboard } from "../services/reportService.js";
 import { getNvidiaApiKey } from "../stores/settingsStore.js";
 
-// Configuration options
-const AUDIENCE_OPTIONS = [
-  { value: "geschaeftsfuehrung", label: "Geschäftsführung" },
-  { value: "fachabteilung", label: "Fachabteilung" },
-  { value: "foerderantrag", label: "Förderantrag-Vorbereitung" },
-];
-
-const FOCUS_OPTIONS = [
-  { value: "technologie", label: "Technologie" },
-  { value: "wettbewerb", label: "Wettbewerb" },
-  { value: "foerderpotential", label: "Förderpotential" },
-  { value: "allgemein", label: "Allgemein" },
-];
-
-const LENGTH_OPTIONS = [
-  { value: "kurz", label: "Kurz" },
-  { value: "mittel", label: "Mittel" },
-  { value: "detail", label: "Detail" },
-];
-
 function ReportGenerator({ articleIds, onClose }) {
   const [articles, setArticles] = useState([]);
   const [loading, setLoading] = useState(true);
   const [hasApiKey, setHasApiKey] = useState(false);
   
   // Report configuration
-  const [config, setConfig] = useState({
-    audience: "fachabteilung",
-    focus: "allgemein",
-    length: "mittel",
-    includeUserNotes: true,
-  });
+  const [purpose, setPurpose] = useState("");
+  const [includeUserNotes, setIncludeUserNotes] = useState(true);
   
   // Generation state
   const [generating, setGenerating] = useState(false);
@@ -95,7 +71,8 @@ function ReportGenerator({ articleIds, onClose }) {
     try {
       const result = await generateReport({
         articleIds: articles.map(a => a.id),
-        ...config,
+        purpose,
+        includeUserNotes,
       }, (partialText) => {
         setReport(partialText);
       });
@@ -273,72 +250,21 @@ function ReportGenerator({ articleIds, onClose }) {
 
               {/* Configuration Form */}
               <div className="space-y-4">
-                {/* Audience */}
+                {/* Purpose */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Zielgruppe
+                    Was soll dieser Report leisten?
                   </label>
-                  <div className="flex flex-wrap gap-2">
-                    {AUDIENCE_OPTIONS.map(option => (
-                      <button
-                        key={option.value}
-                        onClick={() => setConfig(c => ({ ...c, audience: option.value }))}
-                        style={{
-                          padding: '6px 12px', fontSize: '14px', borderRadius: '6px', border: 'none', cursor: 'pointer',
-                          backgroundColor: config.audience === option.value ? '#2563eb' : '#e5e7eb',
-                          color: config.audience === option.value ? '#fff' : '#374151',
-                          fontWeight: config.audience === option.value ? 600 : 400,
-                        }}
-                      >
-                        {option.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Focus */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Fokus
-                  </label>
-                  <div className="flex flex-wrap gap-2">
-                    {FOCUS_OPTIONS.map(option => (
-                      <button
-                        key={option.value}
-                        onClick={() => setConfig(c => ({ ...c, focus: option.value }))}
-                        style={{
-                          padding: '6px 12px', fontSize: '14px', borderRadius: '6px', border: 'none', cursor: 'pointer',
-                          backgroundColor: config.focus === option.value ? '#2563eb' : '#e5e7eb',
-                          color: config.focus === option.value ? '#fff' : '#374151',
-                          fontWeight: config.focus === option.value ? 600 : 400,
-                        }}
-                      >
-                        {option.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Length */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Länge
-                  </label>
-                  <div className="flex flex-wrap gap-2">
-                    {LENGTH_OPTIONS.map(option => (
-                      <button
-                        key={option.value}
-                        onClick={() => setConfig(c => ({ ...c, length: option.value }))}
-                        style={{
-                          padding: '6px 12px', fontSize: '14px', borderRadius: '6px', border: 'none', cursor: 'pointer',
-                          backgroundColor: config.length === option.value ? '#2563eb' : '#e5e7eb',
-                          color: config.length === option.value ? '#fff' : '#374151',
-                          fontWeight: config.length === option.value ? 600 : 400,
-                        }}
-                      >
-                        {option.label}
-                      </button>
-                    ))}
+                  <textarea
+                    value={purpose}
+                    onChange={(e) => setPurpose(e.target.value.slice(0, 500))}
+                    placeholder="Leer lassen für einen kompakten Überblick über die Key Facts"
+                    rows={3}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-purple-500 focus:border-purple-500 resize-y"
+                    style={{ minHeight: '60px' }}
+                  />
+                  <div className="text-xs text-gray-400 mt-1 text-right">
+                    {purpose.length}/500
                   </div>
                 </div>
 
@@ -346,8 +272,8 @@ function ReportGenerator({ articleIds, onClose }) {
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input
                     type="checkbox"
-                    checked={config.includeUserNotes}
-                    onChange={(e) => setConfig(c => ({ ...c, includeUserNotes: e.target.checked }))}
+                    checked={includeUserNotes}
+                    onChange={(e) => setIncludeUserNotes(e.target.checked)}
                     className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
                   />
                   <span className="text-sm text-gray-700">Eigene Notizen einbeziehen</span>

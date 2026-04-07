@@ -8,7 +8,8 @@
  * @exports
  *   getClassifyPrompt(): string
  *   getMatchPrompt(projectsContext: string): string
- *   getReportPrompt(config: ReportConfig): string
+ *   getReportPrompt(config: { purpose?: string }): string
+ *   getAutoReportPrompt(): string
  *   getEnrichPrompt(): string
  *   getSearchRelevancePrompt(): string
  *   getSearchReportPrompt(query: string): string
@@ -107,83 +108,17 @@ const DEFAULT_MATCH_PROMPT = "Du bist ein Analyst bei einem deutschen Verkehrsun
 
 /**
  * Returns the system prompt for report generation.
- * Adapts to audience, focus, and length parameters.
- * @param {object} config - Report configuration
+ * Adapts based on free-text purpose or defaults to key-facts overview.
+ * @param {object} config - { purpose?: string }
  * @returns {string}
  */
 export function getReportPrompt(config) {
-  const { audience, focus, length } = config;
-  
-  // Audience-specific instructions
-  const audienceInstructions = {
-    geschaeftsfuehrung: `Zielgruppe: Geschäftsführung
-- Fokus auf strategische Bedeutung und Business-Impact
-- Konkrete Handlungsempfehlungen
-- Formale, kompakte Sprache
-- Vermeide zu technische Details`,
-    fachabteilung: `Zielgruppe: Fachabteilung
-- Technische Details sind erwünscht und relevant
-- Konkrete nächste Schritte und Umsetzungshinweise
-- Fachliche, direkte Sprache
-- Praktische Anwendbarkeit im Vordergrund`,
-    foerderantrag: `Zielgruppe: Förderantrag-Vorbereitung
-- Fokus auf Förderfähigkeit und Innovationsgehalt
-- Bezug zu deutschen Förderrichtlinien (BMDV, BMWK, EU)
-- Fürderantrag-typische Sprache
-- Relevanz für öffentliche Förderprogramme betonen`,
-  };
-  
-  // Focus-specific instructions
-  const focusInstructions = {
-    technologie: `Fokus: Technologie
-- Technische Einordnung und Reifegrad
-- Umsetzbarkeit und Integration
-- Technische Voraussetzungen
-- Vergleich mit bestehenden Lösungen`,
-    wettbewerb: `Fokus: Wettbewerb
-- Marktüberblick und Positionierung
-- Handlungsdruck und Zeitfaktor
-- Wettbewerbsvorteile identifizieren
-- Marktentwicklung einschätzen`,
-    foerderpotential: `Fokus: Förderpotential
-- Passende Förderprogramme identifizieren
-- Antragsrelevanz bewerten
-- Förderquoten und Bedingungen
-- Zeitliche Einordnung von Ausschreibungen`,
-    allgemein: `Fokus: Allgemein
-- Ausgewogene Mischung aller Aspekte
-- Sowohl technisch als auch strategisch
-- Kurz- bis mittelfristige Relevanz
-- Überblickscharakter`,
-  };
-  
-  // Length-specific instructions
-  const lengthInstructions = {
-    kurz: `Länge: Kurz (Executive Summary)
-- Fasse dich kurz und prägnant
-- Nur die wichtigsten Erkenntnisse und Kernaussagen
-- Bullet Points wo sinnvoll
-- Knappe, auf den Punkt gebrachte Sprache`,
-    mittel: `Länge: Mittel (Strukturierter Bericht)
-- Ausgewogene Detailtiefe
-- Klare Struktur mit Überschriften
-- Wichtige Zusammenhänge erläutern
-- Praktische Empfehlungen ableiten`,
-    detail: `Länge: Detail (Ausführlicher Report)
-- Umfassende, tiefgehende Analyse
-- Detaillierte Begründungen und Einordnungen
-- Mehrere Handlungsempfehlungen mit Kontext
-- Zusammenhänge zwischen Artikeln gründlich herausarbeiten`,
-  };
-  
-  return `Du bist ein Analyst in der Digitalisierungsabteilung eines deutschen Verkehrsunternehmens (ÖPNV).
-Erstelle einen professionellen Report basierend auf den bereitgestellten Artikeln.
+  const { purpose } = config;
 
-${audienceInstructions[audience] || audienceInstructions.fachabteilung}
-
-${focusInstructions[focus] || focusInstructions.allgemein}
-
-${lengthInstructions[length] || lengthInstructions.mittel}
+  if (purpose && purpose.trim()) {
+    return `Du bist ein Analyst in der Digitalisierungsabteilung eines deutschen Verkehrsunternehmens (ÖPNV). Erstelle einen Report mit folgendem Zweck:
+${purpose.trim()}
+Richte den Report konsequent auf diesen Zweck aus.
 
 **Format:**
 Gib den Report als Markdown zurück mit sinnvoller Struktur:
@@ -196,7 +131,24 @@ Gib den Report als Markdown zurück mit sinnvoller Struktur:
 - Verarbeite ALLE bereitgestellten Artikel in den Report
 - Berücksichtige die vier Bewertungsdimensionen (ÖPNV-Direkt, Tech-Transfer, Förder, Markt)
 - Hebe Synergien zwischen Artikeln hervor
-- Formuliere konkrete, umsetzbare Empfehlungen
+- Beziehe dich auf deutschen ÖPNV-Kontext
+
+Wenn Eigene Notizen vorhanden sind, integriere sie als zusätzliche Perspektive.`;
+  }
+
+  return `Du bist ein Analyst in der Digitalisierungsabteilung eines deutschen Verkehrsunternehmens (ÖPNV). Erstelle einen kompakten Überblick über die bereitgestellten Artikel. Fasse die Key Facts jedes Artikels zusammen, identifiziere Potentiale und ordne die Themen ein. Keine konkreten Handlungsempfehlungen, sondern sachliche Einordnung.
+
+**Format:**
+Gib den Report als Markdown zurück mit sinnvoller Struktur:
+- Überschriften (# ## ###)
+- Aufzählungen wo angebracht
+- Fettgedruckte Schlüsselpunkte
+- Klare Abschnitte
+
+**Inhaltliche Anforderungen:**
+- Verarbeite ALLE bereitgestellten Artikel in den Report
+- Berücksichtige die vier Bewertungsdimensionen (ÖPNV-Direkt, Tech-Transfer, Förder, Markt)
+- Hebe Synergien zwischen Artikeln hervor
 - Beziehe dich auf deutschen ÖPNV-Kontext
 
 Wenn Eigene Notizen vorhanden sind, integriere sie als zusätzliche Perspektive.`;
@@ -321,6 +273,44 @@ export const PROMPT_DEFAULTS = {
   searchReport: { label: "Such-Report", getDefault: () => DEFAULT_SEARCH_REPORT_PROMPT },
 };
 
+/**
+ * Returns the system prompt for auto-report generation (synthesized weekly digest).
+ * @returns {string}
+ */
+export function getAutoReportPrompt() {
+  return `Du bist ein Analyst in der Digitalisierungsabteilung eines deutschen Verkehrsunternehmens (ÖPNV). Erstelle einen thematisch gegliederten Wochenbericht über die bereitgestellten Artikel.
+
+**WICHTIG – Struktur:**
+Fasse die Artikel NICHT einzeln nacheinander auf. Stattdessen:
+1. Identifiziere die übergreifenden Themen/Cluster (z.B. "Künstliche Intelligenz im ÖPNV", "Förderprogramme & Regulierung", "E-Mobilität & Ladeinfrastruktur", etc.)
+2. Gliedere den Report nach diesen Themen als Hauptüberschriften (## Neues zum Thema X)
+3. Unter jeder Themen-Überschrift: Synthetisiere die Informationen aus allen zugehörigen Artikeln zu einem zusammenhängenden Fließtext. Stelle Zusammenhänge her, ordne ein, zeige Entwicklungen auf.
+4. Innerhalb des Fließtexts: Verweise auf die Originalquellen mit Markdown-Links: [Kurztitel](URL)
+5. Fasse die Inhalte der Artikel so ausführlich zusammen, wie es thematisch sinnvoll ist – nicht als isolierte Absätze, sondern als Teil der thematischen Synthese.
+
+**Format:**
+# Trend Radar – Wochenbericht
+
+Kurze Einleitung (2-3 Sätze): Was waren die dominierenden Themen diese Woche?
+
+## Neues zum Thema [Thema 1]
+Zusammenhängender Fließtext mit eingeordneten Informationen aus den relevanten Artikeln. Quellenverweise als [Titel](URL) inline.
+
+## Neues zum Thema [Thema 2]
+...
+
+## Übergreifende Trends & Einordnung
+Was verbindet die Themen? Welche Entwicklungen zeichnen sich ab?
+
+**Regeln:**
+- Sprache: Deutsch, sachlich, professionell
+- Jeder Artikel muss in mindestens einem Themenabschnitt verarbeitet sein
+- Quellenlinks als Markdown [Text](URL) – verwende die mitgelieferten URLs
+- Wenn ein Artikel zu mehreren Themen passt, erwähne ihn in beiden
+- Kein Aufzählungs-Stil, sondern zusammenhängende Absätze
+- Markdown-Formatierung: ## für Themen, **fett** für Schlüsselbegriffe`;
+}
+
 export default {
   getClassifyPrompt,
   getMatchPrompt,
@@ -328,5 +318,6 @@ export default {
   getEnrichPrompt,
   getSearchRelevancePrompt,
   getSearchReportPrompt,
+  getAutoReportPrompt,
   PROMPT_DEFAULTS,
 };

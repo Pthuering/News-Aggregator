@@ -9,13 +9,14 @@
  * @calledBy components/ReportGenerator.jsx
  *
  * @dataflow
- *   articleIds → Artikel aus Store laden → mit User-Notes anreichern
- *   → Prompt bauen (System + Artikel-Kontext) → API-Call
+ *   articleIds + purpose → Artikel aus Store laden → mit User-Notes anreichern
+ *   → Prompt bauen (System + Artikel-Kontext) → API-Call (Streaming)
  *   → Markdown-Response zurückgeben
  *
  * @exports
- *   generateReport(config: ReportConfig): Promise<string>
- *     → Gibt fertigen Markdown-Report zurück
+ *   generateReport(config: ReportConfig, onChunk): Promise<string>
+ *     → config.purpose: string (Freitext, kann leer sein)
+ *     → Bisherige config.audience/focus/length entfallen
  *
  * @errors
  *   - Kein API-Key: Error werfen
@@ -77,7 +78,7 @@ function buildUserMessage(articles, includeUserNotes) {
  * @throws {Error} - If API key missing, no articles, or API fails
  */
 export async function generateReport(config, onChunk) {
-  const { articleIds, audience, focus, length, includeUserNotes } = config;
+  const { articleIds, purpose, includeUserNotes } = config;
 
   // Validate API key
   const apiKey = await getNvidiaApiKey();
@@ -104,7 +105,7 @@ export async function generateReport(config, onChunk) {
   }
   
   // Build prompts
-  const systemPrompt = getReportPrompt({ audience, focus, length });
+  const systemPrompt = getReportPrompt({ purpose });
   const userMessage = buildUserMessage(articles, includeUserNotes);
 
   // API call with retries
@@ -206,24 +207,9 @@ export async function generateSimpleReport(config) {
   
   const now = new Date().toLocaleDateString("de-DE");
   
-  const audienceLabels = {
-    geschaeftsfuehrung: "Geschäftsführung",
-    fachabteilung: "Fachabteilung",
-    foerderantrag: "Förderantrag",
-  };
-
-  const focusLabels = {
-    technologie: "Technologie",
-    wettbewerb: "Wettbewerb",
-    foerderpotential: "Förderpotential",
-    allgemein: "Allgemein",
-  };
-
   let report = `# Trend Radar Report
 
 **Datum:** ${now}  
-**Zielgruppe:** ${audienceLabels[config.audience] || config.audience}  
-**Fokus:** ${focusLabels[config.focus] || config.focus}  
 **Ausgewählte Artikel:** ${articles.length}
 
 ---

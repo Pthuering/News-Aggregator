@@ -10,6 +10,8 @@ import { fetchAllFeeds } from "./services/feedService.js";
 import { classifyNew, deepClassify } from "./services/classifyService.js";
 import { matchNewArticles } from "./services/matchService.js";
 import { clusterArticles } from "./services/clusterService.js";
+import { selectSignificantArticles, checkMinimumArticles, generateAutoReport } from "./services/autoReportService.js";
+import { downloadReport, copyReportToClipboard } from "./services/reportService.js";
 import { getNvidiaApiKey } from "./stores/settingsStore.js";
 import { getProjects } from "./stores/projectStore.js";
 import Settings from "./components/Settings.jsx";
@@ -50,6 +52,11 @@ function App() {
   const [unmatchedCount, setUnmatchedCount] = useState(0);
   const [logMessages, setLogMessages] = useState([]);
   const logRef = useRef(null);
+  const [autoReportPreview, setAutoReportPreview] = useState(null); // { significantArticles, totalClassified }
+  const [autoReport, setAutoReport] = useState(null); // generated markdown text
+  const [autoReportLoading, setAutoReportLoading] = useState(false);
+  const [autoReportError, setAutoReportError] = useState(null);
+  const [autoReportCopied, setAutoReportCopied] = useState(false);
 
   const addLog = useCallback((type, message) => {
     const entry = { type, message, time: new Date().toLocaleTimeString("de-DE") };
@@ -274,6 +281,55 @@ function App() {
       addLog("error", `❌ Clustering fehlgeschlagen: ${error.message}`);
     } finally {
       setClusterLoading(false);
+    }
+  };
+
+  // Handle auto-report: select significant articles and show preview
+  const handleAutoReport = () => {
+    const { significantArticles, totalClassified, totalDeep } = selectSignificantArticles(articles);
+    const check = checkMinimumArticles(significantArticles);
+    
+    if (!check.sufficient) {
+      setAutoReportPreview({ significantArticles, totalClassified, totalDeep, warning: check.message });
+    } else {
+      setAutoReportPreview({ significantArticles, totalClassified, totalDeep, warning: null });
+    }
+  };
+
+  // Launch auto-report generation directly with streaming
+  const handleAutoReportGenerate = async () => {
+    const items = autoReportPreview.significantArticles;
+    setAutoReportPreview(null);
+    setAutoReport("");
+    setAutoReportLoading(true);
+    setAutoReportError(null);
+
+    try {
+      const result = await generateAutoReport(items, (text) => {
+        setAutoReport(text);
+      });
+      setAutoReport(result);
+    } catch (err) {
+      setAutoReportError(err.message || "Auto-Report fehlgeschlagen");
+    } finally {
+      setAutoReportLoading(false);
+    }
+  };
+
+  // Download auto-report
+  const handleAutoReportDownload = () => {
+    if (!autoReport) return;
+    const filename = `trend-radar-auto-report-${new Date().toISOString().split('T')[0]}.md`;
+    downloadReport(autoReport, filename);
+  };
+
+  // Copy auto-report
+  const handleAutoReportCopy = async () => {
+    if (!autoReport) return;
+    const ok = await copyReportToClipboard(autoReport);
+    if (ok) {
+      setAutoReportCopied(true);
+      setTimeout(() => setAutoReportCopied(false), 2000);
     }
   };
 
@@ -593,6 +649,7 @@ function App() {
   const handleCloseReportGenerator = () => {
     setShowReportGenerator(false);
     setSelectedArticleIds([]);
+
   };
 
   if (!initialized) {
@@ -837,6 +894,16 @@ function App() {
               className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:bg-gray-300 disabled:text-gray-500 disabled:cursor-not-allowed transition-colors"
             >
               Report erstellen{selectedArticleIds.length > 0 ? ` (${selectedArticleIds.length})` : ""}
+            </button>
+
+            <button
+              onClick={handleAutoReport}
+              disabled={articles.filter(a => a.scores).length === 0}
+              title={articles.filter(a => a.scores).length === 0 ? "Keine klassifizierten Artikel vorhanden" : "Signifikanteste Artikel automatisch auswählen und Report erstellen"}
+              style={articles.filter(a => a.scores).length === 0 ? {} : { backgroundColor: '#059669' }}
+              className="px-4 py-2 text-white rounded-md hover:opacity-90 disabled:bg-gray-300 disabled:text-gray-500 disabled:cursor-not-allowed transition-colors"
+            >
+              Auto-Report
             </button>
 
             <button
@@ -1086,12 +1153,200 @@ function App() {
         </div>
       )}
 
+      {/* Auto-Report Preview Dialog */}
+      {autoReportPreview && (
+        <div
+          className="fixed inset-0 flex items-center justify-center p-4"
+          style={{
+            zIndex: 9999,
+            position: 'fixed',
+            top: 0, left: 0, right: 0, bottom: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.7)'
+          }}
+          onClick={() => setAutoReportPreview(null)}
+        >
+          <div
+            className="bg-white rounded-lg shadow-2xl w-full flex flex-col"
+            style={{ maxWidth: '700px', maxHeight: '80vh' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="p-4 border-b border-gray-200 flex items-center justify-between">
+              <h2 className="text-lg font-bold text-gray-900">Auto-Report Vorschau</h2>
+              <button
+                onClick={() => setAutoReportPreview(null)}
+                className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-md"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Content */}
+            <div className="flex-1 overflow-auto p-5 space-y-4">
+              <div className="text-sm text-gray-600">
+                {autoReportPreview.significantArticles.length} signifikante Artikel gefunden
+                (von {autoReportPreview.totalClassified} klassifizierten, {autoReportPreview.totalDeep} tiefenanalysiert)
+              </div>
+
+              {autoReportPreview.warning && (
+                <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg text-yellow-800 text-sm">
+                  {autoReportPreview.warning}
+                </div>
+              )}
+
+              {/* Article list with significance badges */}
+              <div className="space-y-2 max-h-96 overflow-y-auto">
+                {autoReportPreview.significantArticles.map((item) => (
+                  <div key={item.article.id} className="p-3 bg-gray-50 rounded-lg border border-gray-200">
+                    <div className="text-sm font-medium text-gray-900">{item.article.title}</div>
+                    <div className="text-xs text-gray-500 mt-1">{item.article.source}</div>
+                    <div className="flex flex-wrap gap-1 mt-2">
+                      {item.reasons.map((reason, idx) => {
+                        const colors = {
+                          oepnv: "bg-blue-100 text-blue-800",
+                          transfer: "bg-purple-100 text-purple-800",
+                          foerder: "bg-green-100 text-green-800",
+                          markt: "bg-orange-100 text-orange-800",
+                          synergie: "bg-teal-100 text-teal-800",
+                          lvb: "bg-indigo-100 text-indigo-800",
+                          trend: "bg-pink-100 text-pink-800",
+                        };
+                        const typeLabels = {
+                          oepnv: "ÖV",
+                          transfer: "Transfer",
+                          foerder: "Förder",
+                          markt: "Markt",
+                          synergie: "Synergie",
+                          lvb: "LVB",
+                          trend: "Trend",
+                        };
+                        return (
+                          <span
+                            key={idx}
+                            className={`px-2 py-0.5 text-xs rounded-full ${colors[reason.type] || "bg-gray-100 text-gray-700"}`}
+                            title={reason.label}
+                          >
+                            {typeLabels[reason.type] || reason.type}
+                          </span>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="p-4 border-t border-gray-200 flex justify-end gap-3">
+              <button
+                onClick={() => setAutoReportPreview(null)}
+                className="px-4 py-2 text-sm bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200 transition-colors"
+              >
+                Abbrechen
+              </button>
+              <button
+                onClick={handleAutoReportGenerate}
+                disabled={autoReportPreview.significantArticles.length === 0}
+                className="px-4 py-2 text-sm bg-purple-600 text-white rounded-md hover:bg-purple-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+              >
+                Report generieren ({autoReportPreview.significantArticles.length} Artikel)
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Report Generator Modal */}
       {showReportGenerator && (
         <ReportGenerator
           articleIds={selectedArticleIds}
           onClose={handleCloseReportGenerator}
         />
+      )}
+
+      {/* Auto-Report Result Modal */}
+      {(autoReport !== null || autoReportLoading) && (
+        <div
+          className="fixed inset-0 flex items-center justify-center p-4"
+          style={{
+            zIndex: 9999,
+            position: 'fixed',
+            top: 0, left: 0, right: 0, bottom: 0,
+            backgroundColor: '#f3f4f6',
+          }}
+          onClick={() => { if (!autoReportLoading) { setAutoReport(null); setAutoReportError(null); } }}
+        >
+          <div
+            className="bg-white rounded-lg shadow-xl w-full flex flex-col"
+            style={{ maxWidth: '900px', maxHeight: '90vh', overflow: 'auto' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="p-4 border-b border-gray-200 flex items-center justify-between">
+              <h2 className="text-xl font-bold text-gray-900">
+                {autoReportLoading ? "Auto-Report wird generiert..." : "Auto-Report"}
+              </h2>
+              <div className="flex items-center gap-2">
+                {!autoReportLoading && autoReport && (
+                  <>
+                    <button
+                      onClick={handleAutoReportCopy}
+                      className="px-3 py-1.5 text-sm bg-gray-100 text-gray-700 rounded hover:bg-gray-200 transition-colors"
+                    >
+                      {autoReportCopied ? "Kopiert!" : "Kopieren"}
+                    </button>
+                    <button
+                      onClick={handleAutoReportDownload}
+                      className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
+                    >
+                      Als Markdown speichern
+                    </button>
+                  </>
+                )}
+                <button
+                  onClick={() => { setAutoReport(null); setAutoReportError(null); }}
+                  className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-md"
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+
+            {/* Content */}
+            <div className="flex-1 overflow-auto p-6">
+              {autoReportLoading && (
+                <div className="text-sm text-gray-500 flex items-center gap-2 mb-4">
+                  <span style={{ display: 'inline-block', width: 12, height: 12, border: '2px solid #d1d5db', borderTopColor: '#7c3aed', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
+                  Report wird generiert...
+                </div>
+              )}
+
+              {autoReportError && (
+                <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm mb-4">
+                  {autoReportError}
+                </div>
+              )}
+
+              {autoReport && (
+                <div
+                  className="prose max-w-none bg-gray-50 p-4 rounded-lg border border-gray-200"
+                  style={{ whiteSpace: 'pre-wrap', minHeight: autoReportLoading ? '200px' : undefined }}
+                  dangerouslySetInnerHTML={{
+                    __html: autoReport
+                      .replace(/^### (.*$)/gim, '<h3 class="text-lg font-semibold mt-4 mb-2">$1</h3>')
+                      .replace(/^## (.*$)/gim, '<h2 class="text-xl font-bold mt-5 mb-3">$1</h2>')
+                      .replace(/^# (.*$)/gim, '<h1 class="text-2xl font-bold mt-6 mb-4">$1</h1>')
+                      .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+                      .replace(/\*(.*?)\*/g, '<em>$1</em>')
+                      .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" class="text-blue-600 hover:text-blue-800 underline">$1</a>')
+                      .replace(/^\- (.*$)/gim, '<li class="ml-4">$1</li>')
+                      .replace(/\n/g, '<br />')
+                  }}
+                />
+              )}
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
