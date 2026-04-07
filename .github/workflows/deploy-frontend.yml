@@ -39,7 +39,6 @@ jobs:
 
       - name: Copy root files to dist
         run: |
-          cp ./index.html ./frontend/dist/
           cp ./favicon.svg ./frontend/dist/ 2>/dev/null || true
           cp ./icons.svg ./frontend/dist/ 2>/dev/null || true
 
